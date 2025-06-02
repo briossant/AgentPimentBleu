@@ -19,6 +19,7 @@ This is the initial implementation of AgentPimentBleu, focusing on Phase 1 of th
 
 - [x] Basic Gradio UI with repository URL input
 - [x] Core functionality to clone and analyze Git repositories
+- [x] LLM Integration with Ollama and Modal
 - [ ] SAST Integration (coming soon)
 - [ ] SCA Integration (coming soon)
 - [ ] AI-Powered Dependency Impact Assessment (coming soon)
@@ -36,6 +37,17 @@ This is the initial implementation of AgentPimentBleu, focusing on Phase 1 of th
    pip install -r requirements.txt
    ```
 
+3. (Optional) Install Ollama for local LLM support:
+   ```
+   # Follow instructions at https://ollama.ai/download
+   ```
+
+4. (Optional) Install Modal for cloud LLM support:
+   ```
+   pip install modal
+   modal token new
+   ```
+
 ## Usage
 
 1. Run the application:
@@ -48,6 +60,27 @@ This is the initial implementation of AgentPimentBleu, focusing on Phase 1 of th
 3. Enter a public Git repository URL in the input field and click "Scan Repository".
 
 4. The application will clone the repository and display the scan results.
+
+### LLM Configuration
+
+AgentPimentBleu uses a configuration file at `~/.config/agent_piment_bleu/llm_config.json` to store LLM provider settings. The default configuration will be created automatically on first run, but you can modify it to change the default provider or provider-specific settings:
+
+```json
+{
+  "default_provider": "ollama",
+  "providers": {
+    "ollama": {
+      "base_url": "http://localhost:11434",
+      "model": "llama2",
+      "timeout": 60
+    },
+    "modal": {
+      "model": "mistral-7b",
+      "timeout": 60
+    }
+  }
+}
+```
 
 ## Using with Nix
 
@@ -94,6 +127,12 @@ This will create a result directory with the built package.
   - `orchestrator.py`: Main orchestrator that coordinates the scanning process
   - `project_detector.py`: Detects programming languages used in the repository
   - `reporting.py`: Generates formatted reports from scan results
+  - `llm/`: LLM integration modules
+    - `base.py`: Base LLM provider interface
+    - `config.py`: Configuration handling for LLM settings
+    - `factory.py`: Factory for creating LLM providers
+    - `ollama.py`: Ollama LLM provider implementation
+    - `modal_provider.py`: Modal LLM provider implementation
   - `scanners/`: Directory containing language-specific scanners
     - `js/`: JavaScript scanners
       - `sast.py`: JavaScript SAST scanner using ESLint

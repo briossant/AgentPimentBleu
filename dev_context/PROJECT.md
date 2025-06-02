@@ -63,17 +63,17 @@ AgentPimentBleu is a Gradio-based application that:
 6.  **Static Analysis (SAST) - Coding/Configuration Mistakes:**
     *   **JavaScript:** Uses ESLint with security plugins via `scanners/js/sast.py`.
     *   **Python:** Uses Bandit via `scanners/python/sast.py`.
-    *   **Future AI Enhancement:**
-        *   Suspicious code snippets/config files will be sent to an LLM.
+    *   **AI Enhancement:**
+        *   Suspicious code snippets/config files can be sent to an LLM via the `llm` module.
         *   LLM prompts: Verify true positives, explain risk in context, suggest fixes, identify misconfigurations.
 7.  **Dependency Analysis (SCA):**
     *   **JavaScript:** Uses npm audit via `scanners/js/sca.py`.
     *   **Python:** Uses pip-audit via `scanners/python/sca.py`.
     *   Identifies dependencies and checks for known vulnerabilities.
-8.  **Future AI-Powered Impact Assessment:**
+8.  **AI-Powered Impact Assessment:**
     *   For each vulnerable dependency:
-        *   **Code Usage Analysis:** Agent will attempt to find where and how the dependency is imported/used.
-        *   **LLM Reasoning:** The LLM will be provided with CVE details, library information, and code snippets.
+        *   **Code Usage Analysis:** Agent attempts to find where and how the dependency is imported/used.
+        *   **LLM Reasoning:** The LLM is provided with CVE details, library information, and code snippets via the `llm` module.
 9.  **Report Generation:**
     *   The `reporting.py` module compiles findings from all scanners into a standardized format.
     *   Generates a Markdown report with sections for each scanner type and language.
@@ -95,10 +95,11 @@ AgentPimentBleu is a Gradio-based application that:
 *   **SCA Tools Implemented:**
     *   **JavaScript:** npm audit
     *   **Python:** pip-audit
-*   **Future LLM Integration:**
-    *   Hugging Face `transformers` (for local models, if applicable).
-    *   APIs from hackathon sponsors: Anthropic (Claude), Mistral, Sambanova.
-    *   Frameworks like LangChain or LlamaIndex (optional, for prompt management).
+*   **LLM Integration:**
+    *   Ollama for local LLM deployment
+    *   Modal for cloud-based LLM inference
+    *   Configuration system in ~/.config/agent_piment_bleu/
+    *   Extensible provider interface for future integrations
 *   **Orchestration:** Modular Python architecture with the orchestrator coordinating the scanning process.
 
 ## 7. AI "Intelligence" - How AgentPimentBleu Leverages AI
