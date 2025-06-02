@@ -1,3 +1,4 @@
 gradio>=4.0.0
 gitpython>=3.1.0
 requests>=2.25.0
+# Node.js and npm should be installed on the system for JavaScript scanning
