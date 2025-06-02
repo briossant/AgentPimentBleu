@@ -89,7 +89,18 @@ This will create a result directory with the built package.
 
 - `app.py`: Main entry point for the application
 - `agent_piment_bleu/`: Core package containing the application code
-  - `main.py`: Gradio UI implementation
+  - `main.py`: Entry point for the application, re-exports main functions
+  - `ui.py`: Gradio UI implementation
+  - `orchestrator.py`: Main orchestrator that coordinates the scanning process
+  - `project_detector.py`: Detects programming languages used in the repository
+  - `reporting.py`: Generates formatted reports from scan results
+  - `scanners/`: Directory containing language-specific scanners
+    - `js/`: JavaScript scanners
+      - `sast.py`: JavaScript SAST scanner using ESLint
+      - `sca.py`: JavaScript SCA scanner using npm audit
+    - `python/`: Python scanners
+      - `sast.py`: Python SAST scanner using Bandit
+      - `sca.py`: Python SCA scanner using pip-audit
   - `utils/`: Utility functions
     - `git_utils.py`: Git repository handling functions
 

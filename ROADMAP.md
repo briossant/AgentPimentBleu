@@ -17,22 +17,24 @@ This document outlines the development roadmap for AgentPimentBleu, an AI-powere
 **Key Features & Tasks:**
 
 1.  **Gradio UI - Basics:**
-    *   [ ] Input field for public Git repository URL.
-    *   [ ] Button to trigger the scan.
-    *   [ ] Static area for displaying status messages (e.g., "Cloning...", "Analyzing...").
-    *   [ ] Output area (e.g., `gr.Markdown`) to display the final report.
+    *   [x] Input field for public Git repository URL.
+    *   [x] Button to trigger the scan.
+    *   [x] Static area for displaying status messages (e.g., "Cloning...", "Analyzing...").
+    *   [x] Output area (e.g., `gr.Markdown`) to display the final report.
 2.  **Core Agent Logic - Setup:**
-    *   [ ] Functionality to clone a public Git repository to a temporary local directory.
-    *   [ ] Basic error handling for invalid URLs or cloning failures.
+    *   [x] Functionality to clone a public Git repository to a temporary local directory.
+    *   [x] Basic error handling for invalid URLs or cloning failures.
 3.  **SAST Integration - Initial Pass:**
-    *   [ ] Integrate at least one Python-based SAST tool (e.g., `Bandit`).
-    *   [ ] Parse basic output from the SAST tool.
+    *   [x] Integrate JavaScript SAST using ESLint with security plugins.
+    *   [x] Integrate Python SAST using Bandit.
+    *   [x] Parse basic output from the SAST tools.
     *   [ ] **LLM Enhancement (Proof of Concept):**
         *   Send a few example SAST findings (code snippets) to an LLM.
         *   Prompt LLM for a human-readable explanation of the risk.
 4.  **SCA Integration - Initial Pass:**
-    *   [ ] Integrate at least one Python-based SCA tool (e.g., `pip-audit` for `requirements.txt`).
-    *   [ ] Parse basic dependency and CVE information.
+    *   [x] Integrate JavaScript SCA using npm audit.
+    *   [x] Integrate Python SCA using pip-audit.
+    *   [x] Parse basic dependency and CVE information.
 5.  **⭐ AI-Powered Dependency Impact Assessment (Core Feature):**
     *   [ ] For identified vulnerable dependencies:
         *   [ ] Basic code searching mechanism to identify where the dependency is imported/used (e.g., simple string matching for `import library_name`).
@@ -56,29 +58,35 @@ This document outlines the development roadmap for AgentPimentBleu, an AI-powere
 
 **Goal:** Improve the robustness, accuracy, and usability of the MVP. Expand initial capabilities.
 
-*   **Enhanced SAST & SCA:**
-    *   Integrate more SAST/SCA tools for broader language support (e.g., `Semgrep` for SAST, `npm audit` if Node.js environment can be managed).
-    *   Improve parsing and normalization of outputs from various tools.
-    *   Support for more dependency file formats (e.g., `Pipfile.lock`, `poetry.lock`, `package-lock.json`).
+*   **Enhanced SAST & SCA: ✓**
+    *   [x] Implement modular architecture with standardized scanner interfaces
+    *   [x] Support for multiple programming languages (JavaScript and Python)
+    *   [x] Integrate JavaScript SAST (ESLint with security plugins) and SCA (npm audit)
+    *   [x] Integrate Python SAST (Bandit) and SCA (pip-audit)
+    *   [ ] Integrate more SAST/SCA tools (e.g., `Semgrep`, `gitleaks`)
+    *   [ ] Support for more dependency file formats (e.g., `Pipfile.lock`, `poetry.lock`, `package-lock.json`)
+*   **Project Type Detection: ✓**
+    *   [x] Implement language detection to determine project types
+    *   [x] Dynamically select appropriate scanners based on detected languages
 *   **Improved LLM Integration & Prompt Engineering:**
-    *   Refine prompts for better accuracy in impact assessment and code analysis.
-    *   Develop more sophisticated methods for selecting and sending relevant code context to the LLM.
-    *   Explore techniques to reduce LLM hallucination and improve consistency.
-    *   Handle LLM API errors gracefully.
+    *   [ ] Refine prompts for better accuracy in impact assessment and code analysis
+    *   [ ] Develop more sophisticated methods for selecting and sending relevant code context to the LLM
+    *   [ ] Explore techniques to reduce LLM hallucination and improve consistency
+    *   [ ] Handle LLM API errors gracefully
 *   **Advanced Code Usage Analysis (for SCA Impact):**
-    *   Move beyond simple import checking to identify specific function/method calls related to CVEs (might involve Abstract Syntax Tree (AST) parsing or more advanced LLM analysis).
+    *   [ ] Move beyond simple import checking to identify specific function/method calls related to CVEs (might involve Abstract Syntax Tree (AST) parsing or more advanced LLM analysis)
 *   **Gradio UI Enhancements:**
-    *   More interactive report display (e.g., collapsible sections, severity filtering, links to CVE details).
-    *   Clearer progress indicators and error messages.
-    *   Option to export the report.
+    *   [ ] More interactive report display (e.g., collapsible sections, severity filtering, links to CVE details)
+    *   [ ] Clearer progress indicators and error messages
+    *   [ ] Option to export the report
 *   **Configuration Scanning:**
-    *   Specifically target common configuration files (e.g., Dockerfiles, K8s manifests, CI/CD pipeline files, `.env` files) for misconfigurations.
+    *   [ ] Specifically target common configuration files (e.g., Dockerfiles, K8s manifests, CI/CD pipeline files, `.env` files) for misconfigurations
 *   **Secrets Detection:**
-    *   Integrate a dedicated secrets scanner (e.g., `gitleaks`).
-    *   Use LLM to assess the validity/sensitivity of potential leaked secrets.
+    *   [ ] Integrate a dedicated secrets scanner (e.g., `gitleaks`)
+    *   [ ] Use LLM to assess the validity/sensitivity of potential leaked secrets
 *   **Performance Optimization:**
-    *   Profile and optimize long-running parts of the scan.
-    *   Consider asynchronous operations for UI responsiveness.
+    *   [ ] Profile and optimize long-running parts of the scan
+    *   [ ] Consider asynchronous operations for UI responsiveness
 
 ---
 

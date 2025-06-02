@@ -53,40 +53,53 @@ AgentPimentBleu is a Gradio-based application that:
 1.  **Input:** User provides a public Git repository URL via the Gradio UI.
 2.  **Agent Initialization:** The main AgentPimentBleu orchestrator is triggered.
 3.  **Cloning & Setup:**
-    *   The agent clones the specified repository to a temporary, isolated environment.
-4.  **Static Analysis (SAST) - Coding/Configuration Mistakes:**
-    *   **Tool Integration:** Utilizes SAST tools (e.g., Bandit for Python, Semgrep).
-    *   **AI Enhancement:**
-        *   Suspicious code snippets/config files are sent to an LLM.
-        *   LLM prompts: Verify true positives, explain risk in context, suggest fixes, identify misconfigurations (e.g., API keys).
-5.  **Dependency Analysis (SCA):**
-    *   **Tool Integration:** Uses tools to identify dependencies (e.g., parse `requirements.txt`, `package.json`) and check for CVEs (e.g., `pip-audit`, `npm audit`, OSS Index API).
-6.  **AI-Powered Impact Assessment (for Dependencies):**
+    *   The orchestrator clones the specified repository to a temporary, isolated environment using `git_utils.py`.
+4.  **Project Type Detection:**
+    *   The `project_detector.py` module analyzes the repository to determine which programming languages are used.
+    *   Currently detects JavaScript and Python projects by examining file extensions and dependency files.
+5.  **Scanner Modules Selection:**
+    *   Based on detected languages, the orchestrator dynamically loads appropriate scanner modules from the `scanners/` directory.
+    *   Each language has dedicated SAST and SCA scanners with a standardized interface.
+6.  **Static Analysis (SAST) - Coding/Configuration Mistakes:**
+    *   **JavaScript:** Uses ESLint with security plugins via `scanners/js/sast.py`.
+    *   **Python:** Uses Bandit via `scanners/python/sast.py`.
+    *   **Future AI Enhancement:**
+        *   Suspicious code snippets/config files will be sent to an LLM.
+        *   LLM prompts: Verify true positives, explain risk in context, suggest fixes, identify misconfigurations.
+7.  **Dependency Analysis (SCA):**
+    *   **JavaScript:** Uses npm audit via `scanners/js/sca.py`.
+    *   **Python:** Uses pip-audit via `scanners/python/sca.py`.
+    *   Identifies dependencies and checks for known vulnerabilities.
+8.  **Future AI-Powered Impact Assessment:**
     *   For each vulnerable dependency:
-        *   **Code Usage Analysis:** Agent attempts to find where and how the dependency is imported/used in the project's codebase.
-        *   **LLM Reasoning:** The LLM is provided with:
-            *   CVE details.
-            *   Vulnerable library information.
-            *   Code snippets showing project usage.
-            *   Prompts: "Assess exploitability likelihood given this project's usage of library X for CVE-YYYY-ZZZZ. Explain." and "What's the potential impact *on this project*?"
-7.  **Report Generation:**
-    *   The agent compiles findings, prioritizing those with confirmed or high-likelihood impact.
-    *   Report clearly differentiates AI-assessed impact.
-8.  **Gradio UI Presentation:**
-    *   Results are displayed in a structured and readable format (e.g., Markdown with summaries, details, and recommendations).
+        *   **Code Usage Analysis:** Agent will attempt to find where and how the dependency is imported/used.
+        *   **LLM Reasoning:** The LLM will be provided with CVE details, library information, and code snippets.
+9.  **Report Generation:**
+    *   The `reporting.py` module compiles findings from all scanners into a standardized format.
+    *   Generates a Markdown report with sections for each scanner type and language.
+10. **Gradio UI Presentation:**
+    *   Results are displayed in a structured and readable format through the Gradio interface.
 
 ## 6. Technical Stack
 
 *   **Primary Language:** Python
 *   **UI Framework:** Gradio
-*   **Git Interaction:** `gitpython` library or `subprocess` module.
-*   **LLM Integration:**
+*   **Git Interaction:** `subprocess` module for Git operations.
+*   **Project Detection:** Custom logic to identify programming languages and project types.
+*   **Modular Scanner Architecture:**
+    *   Standardized interfaces for all scanners
+    *   Dynamic loading of appropriate scanners based on detected languages
+*   **SAST Tools Implemented:**
+    *   **JavaScript:** ESLint with security plugins
+    *   **Python:** Bandit
+*   **SCA Tools Implemented:**
+    *   **JavaScript:** npm audit
+    *   **Python:** pip-audit
+*   **Future LLM Integration:**
     *   Hugging Face `transformers` (for local models, if applicable).
     *   APIs from hackathon sponsors: Anthropic (Claude), Mistral, Sambanova.
     *   Frameworks like LangChain or LlamaIndex (optional, for prompt management).
-*   **SAST Tool Examples:** `Bandit`, `Semgrep`, `ESLint` (with security plugins), `gitleaks`.
-*   **SCA Tool Examples:** `pip-audit`, `npm audit`, OWASP Dependency-Check, Snyk API, OSS Index API.
-*   **Orchestration:** Custom Python scripts defining the agent's logic and tool interactions.
+*   **Orchestration:** Modular Python architecture with the orchestrator coordinating the scanning process.
 
 ## 7. AI "Intelligence" - How AgentPimentBleu Leverages AI
 
