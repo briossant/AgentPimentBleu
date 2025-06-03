@@ -99,19 +99,10 @@ def create_ui():
 
             with gr.Column(scale=1):
                 scan_button = gr.Button("Scan Repository", variant="primary", scale=2)
-
-        with gr.Row():
-            status = gr.Textbox(
-                label="Status",
-                value="Idle",
-                interactive=False
-            )
-
-        with gr.Row():
-            with gr.Column(scale=2):
-                report = gr.Markdown(
-                    label="Scan Report",
-                    value="Scan results will appear here."
+                status = gr.Textbox(
+                    label="Status",
+                    value="Idle",
+                    interactive=False
                 )
 
             with gr.Column(scale=1):
@@ -122,6 +113,12 @@ def create_ui():
                     max_lines=15,
                     interactive=False
                 )
+
+        with gr.Row():
+            report = gr.Markdown(
+                label="Scan Report",
+                value="Scan results will appear here."
+            )
 
         # Set the UI callback for the logger
         logger.set_ui_callback(ui_log_callback)

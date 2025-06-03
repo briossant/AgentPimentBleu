@@ -128,7 +128,9 @@ def run_sast_scan(language, repo_path):
     try:
         # Import the appropriate scanner module
         logger.info(f"Importing SAST scanner module for {language}")
-        scanner_module = importlib.import_module(f"agent_piment_bleu.scanners.{language}.sast")
+        # Map 'javascript' to 'js' for the import path
+        module_language = 'js' if language == 'javascript' else language
+        scanner_module = importlib.import_module(f"agent_piment_bleu.scanners.{module_language}.sast")
 
         # Run the scan
         logger.info(f"Running {language} SAST scan")
@@ -173,7 +175,9 @@ def run_sca_scan(language, repo_path):
     try:
         # Import the appropriate scanner module
         logger.info(f"Importing SCA scanner module for {language}")
-        scanner_module = importlib.import_module(f"agent_piment_bleu.scanners.{language}.sca")
+        # Map 'javascript' to 'js' for the import path
+        module_language = 'js' if language == 'javascript' else language
+        scanner_module = importlib.import_module(f"agent_piment_bleu.scanners.{module_language}.sca")
 
         # Run the scan
         logger.info(f"Running {language} SCA scan")

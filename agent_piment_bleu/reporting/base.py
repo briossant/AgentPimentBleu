@@ -91,22 +91,7 @@ def generate_markdown_report(aggregated_results: Dict[str, Any]) -> str:
     logger.info(f"Number of scan results: {len(scan_results)}")
 
     # Start building the report
-    report = f"""
-    ## Scan Results
-
-    Repository: {repo_url}
-
-    ### Summary
-
-    The repository was successfully scanned for security issues.
-
-    Detected languages: {', '.join(languages) if languages else 'None detected'}
-    """
-
-    # Add scan status for each scanner
-    report += "\n\nScan Status:\n"
-    for result in scan_results:
-        report += f"- {result['language'].capitalize()} {result['scan_type']}: {result['message']}\n"
+    report = ""
 
     # Import language-specific reporters
     logger.info("Importing language-specific reporters")
@@ -126,31 +111,35 @@ def generate_markdown_report(aggregated_results: Dict[str, Any]) -> str:
             from agent_piment_bleu.reporting.default import Reporter
             language_reporters[language] = Reporter()
 
-    # Report failed scans
-    failed_scans = [r for r in scan_results if not r['success']]
-    if failed_scans:
-        logger.info(f"Processing {len(failed_scans)} failed scans")
-        report += "\n\n### Failed Scans\n\n"
-        for result in failed_scans:
-            language = result['language']
-            logger.info(f"Generating failed scan report for {language} {result['scan_type']}")
-            if language in language_reporters:
-                report += language_reporters[language].generate_failed_scan_report(result)
-            else:
-                # Fallback to default reporting if no language-specific reporter is available
-                logger.warning(f"No reporter found for {language}, using default reporter")
-                from agent_piment_bleu.reporting.default import Reporter
-                report += Reporter().generate_failed_scan_report(result)
-    else:
-        logger.info("No failed scans to report")
+    # Skip failed scans reporting as per requirement
+    logger.info("Skipping failed scans reporting as per requirement")
 
-    # Process SAST findings
+    # Process scan results in a side-by-side layout
+    report += "\n\n<div style='display: flex; flex-direction: row; gap: 20px;'>\n"
+
+    # Process Code analysis findings (left side)
+    report += "<div style='flex: 1; border: 1px solid #ccc; padding: 10px;'>\n"
+    report += "<h3>Code Analysis</h3>\n"
+
+    # Add subbox for command result
+    report += "<div style='border: 1px solid #eee; padding: 10px; margin-bottom: 10px;'>\n"
+    report += "<h4>Command Result</h4>\n"
     sast_findings = [r for r in scan_results if r['scan_type'] == 'SAST' and r['success']]
-    logger.info(f"Processing {len(sast_findings)} successful SAST scans")
+    logger.info(f"Processing {len(sast_findings)} successful Code analysis scans")
     for result in sast_findings:
         language = result['language']
         findings_count = len(result.get('findings', []))
-        logger.info(f"Generating SAST report for {language} with {findings_count} findings")
+        logger.info(f"Generating Code analysis command result for {language} with {findings_count} findings")
+        report += f"<p>Found {findings_count} issues in {language} code.</p>\n"
+    report += "</div>\n"
+
+    # Add subbox for agent analysis
+    report += "<div style='border: 1px solid #eee; padding: 10px; margin-bottom: 10px;'>\n"
+    report += "<h4>Agent Analysis</h4>\n"
+    for result in sast_findings:
+        language = result['language']
+        findings_count = len(result.get('findings', []))
+        logger.info(f"Generating Code analysis report for {language} with {findings_count} findings")
         if language in language_reporters:
             report += language_reporters[language].generate_sast_report(result)
         else:
@@ -158,14 +147,32 @@ def generate_markdown_report(aggregated_results: Dict[str, Any]) -> str:
             logger.warning(f"No reporter found for {language}, using default reporter")
             from agent_piment_bleu.reporting.default import Reporter
             report += Reporter().generate_sast_report(result)
+    report += "</div>\n"
+    report += "</div>\n"
 
-    # Process SCA findings
+    # Process Dependency analysis findings (right side)
+    report += "<div style='flex: 1; border: 1px solid #ccc; padding: 10px;'>\n"
+    report += "<h3>Dependency Analysis</h3>\n"
+
+    # Add subbox for command result
+    report += "<div style='border: 1px solid #eee; padding: 10px; margin-bottom: 10px;'>\n"
+    report += "<h4>Command Result</h4>\n"
     sca_findings = [r for r in scan_results if r['scan_type'] == 'SCA' and r['success']]
-    logger.info(f"Processing {len(sca_findings)} successful SCA scans")
+    logger.info(f"Processing {len(sca_findings)} successful Dependency analysis scans")
     for result in sca_findings:
         language = result['language']
         findings_count = len(result.get('findings', []))
-        logger.info(f"Generating SCA report for {language} with {findings_count} findings")
+        logger.info(f"Generating Dependency analysis command result for {language} with {findings_count} findings")
+        report += f"<p>Found {findings_count} vulnerabilities in {language} dependencies.</p>\n"
+    report += "</div>\n"
+
+    # Add subbox for agent analysis
+    report += "<div style='border: 1px solid #eee; padding: 10px; margin-bottom: 10px;'>\n"
+    report += "<h4>Agent Analysis</h4>\n"
+    for result in sca_findings:
+        language = result['language']
+        findings_count = len(result.get('findings', []))
+        logger.info(f"Generating Dependency analysis report for {language} with {findings_count} findings")
         if language in language_reporters:
             report += language_reporters[language].generate_sca_report(result)
         else:
@@ -173,25 +180,12 @@ def generate_markdown_report(aggregated_results: Dict[str, Any]) -> str:
             logger.warning(f"No reporter found for {language}, using default reporter")
             from agent_piment_bleu.reporting.default import Reporter
             report += Reporter().generate_sca_report(result)
+    report += "</div>\n"
+    report += "</div>\n"
 
-    # Add note about AI-powered features
-    logger.info("Adding AI-powered features section to report")
-    report += "\n\n### AI-Powered Features\n\n"
+    report += "</div>"
 
-    if aggregated_results.get('llm_enhanced', False):
-        logger.info("LLM enhancement was enabled for this scan")
-        report += "This report includes the following AI-powered features:\n"
-        report += "- Human-readable descriptions of CVEs\n"
-        report += "\nFuture enhancements will include:\n"
-        report += "- AI-powered impact assessments for vulnerabilities\n"
-        report += "- More detailed analysis of code and dependencies\n"
-    else:
-        logger.info("LLM enhancement was not enabled for this scan")
-        report += "AI enhancement was not enabled for this scan.\n"
-        report += "Enable AI enhancement to get:\n"
-        report += "- Human-readable descriptions of CVEs\n"
-        report += "- AI-powered impact assessments for vulnerabilities\n"
-        report += "- More detailed analysis of code and dependencies\n"
+    # AI-powered features section removed as requested
 
     logger.info("Report generation completed successfully")
     return report
