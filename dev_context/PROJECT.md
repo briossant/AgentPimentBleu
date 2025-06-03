@@ -75,8 +75,9 @@ AgentPimentBleu is a Gradio-based application that:
         *   **Code Usage Analysis:** Agent attempts to find where and how the dependency is imported/used.
         *   **LLM Reasoning:** The LLM is provided with CVE details, library information, and code snippets via the `llm` module.
 9.  **Report Generation:**
-    *   The `reporting.py` module compiles findings from all scanners into a standardized format.
-    *   Generates a Markdown report with sections for each scanner type and language.
+    *   The `reporting` module compiles findings from all scanners into a standardized format.
+    *   Uses a modular architecture with a base reporter class and language-specific reporter classes.
+    *   Generates a Markdown report with sections for each scanner type and language, with language-specific formatting and recommendations.
 10. **Gradio UI Presentation:**
     *   Results are displayed in a structured and readable format through the Gradio interface.
 

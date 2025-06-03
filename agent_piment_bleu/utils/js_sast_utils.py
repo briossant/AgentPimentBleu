@@ -6,10 +6,10 @@ import tempfile
 def is_js_project(repo_path):
     """
     Check if the repository contains JavaScript files.
-    
+
     Args:
         repo_path (str): Path to the repository
-        
+
     Returns:
         bool: True if JavaScript files are found, False otherwise
     """
@@ -22,10 +22,10 @@ def is_js_project(repo_path):
 def setup_eslint(repo_path):
     """
     Set up ESLint with security plugins in the repository.
-    
+
     Args:
         repo_path (str): Path to the repository
-        
+
     Returns:
         dict: Result of the setup operation
     """
@@ -41,7 +41,8 @@ def setup_eslint(repo_path):
                 "eslint:recommended"
             ],
             "plugins": [
-                "security"
+                "security",
+                "security-node"
             ],
             "rules": {
                 "security/detect-unsafe-regex": "error",
@@ -55,18 +56,35 @@ def setup_eslint(repo_path):
                 "security/detect-non-literal-require": "error",
                 "security/detect-object-injection": "error",
                 "security/detect-possible-timing-attacks": "error",
-                "security/detect-pseudoRandomBytes": "error"
+                "security/detect-pseudoRandomBytes": "error",
+                "security-node/detect-absence-of-name-option-in-exrpress-session": "error",
+                "security-node/detect-buffer-unsafe-allocation": "error",
+                "security-node/detect-child-process": "error",
+                "security-node/detect-crlf": "error",
+                "security-node/detect-dangerous-redirects": "error",
+                "security-node/detect-improper-exception-handling": "error",
+                "security-node/detect-insecure-cookie": "error",
+                "security-node/detect-missing-helmet": "error",
+                "security-node/detect-nosql-injection": "error",
+                "security-node/detect-option-multiplestatements-in-mysql": "error",
+                "security-node/detect-option-rejectunauthorized-in-nodejs-httpsrequest": "error",
+                "security-node/detect-possible-timing-attacks": "error",
+                "security-node/detect-runinthiscontext-method": "error",
+                "security-node/detect-sql-injection": "error",
+                "security-node/detect-unhandled-async-errors": "error",
+                "security-node/detect-unhandled-event-errors": "error",
+                "security-node/detect-weak-crypto-dependency": "error"
             }
         }
-        
+
         config_path = os.path.join(repo_path, '.eslintrc.json')
         with open(config_path, 'w') as f:
             json.dump(eslint_config, f, indent=2)
-            
-        # Install ESLint and security plugin locally
-        npm_install_cmd = ["npm", "install", "--no-save", "eslint", "eslint-plugin-security"]
+
+        # Install ESLint and security plugins locally
+        npm_install_cmd = ["npm", "install", "--no-save", "eslint", "eslint-plugin-security", "eslint-plugin-security-node"]
         subprocess.run(npm_install_cmd, cwd=repo_path, check=True, capture_output=True)
-        
+
         return {
             "success": True,
             "message": "ESLint with security plugin set up successfully."
@@ -85,10 +103,10 @@ def setup_eslint(repo_path):
 def run_eslint_scan(repo_path):
     """
     Run ESLint with security rules on JavaScript files in the repository.
-    
+
     Args:
         repo_path (str): Path to the repository
-        
+
     Returns:
         dict: Results of the scan with keys:
             - success (bool): True if scan was successful, False otherwise
@@ -102,30 +120,30 @@ def run_eslint_scan(repo_path):
             for file in files:
                 if file.endswith('.js') or file.endswith('.jsx') or file.endswith('.ts') or file.endswith('.tsx'):
                     js_files.append(os.path.join(root, file))
-        
+
         if not js_files:
             return {
                 "success": True,
                 "message": "No JavaScript files found to scan.",
                 "findings": []
             }
-        
+
         # Run ESLint on the JavaScript files
         eslint_cmd = ["npx", "eslint", "--format", "json", "--no-eslintrc", "-c", ".eslintrc.json"] + js_files
         result = subprocess.run(eslint_cmd, cwd=repo_path, capture_output=True, text=True)
-        
+
         # Parse the ESLint output
         findings = []
-        
+
         if result.stdout:
             try:
                 eslint_results = json.loads(result.stdout)
-                
+
                 for file_result in eslint_results:
                     file_path = os.path.relpath(file_result["filePath"], repo_path)
-                    
+
                     for message in file_result.get("messages", []):
-                        if message.get("ruleId", "").startswith("security/"):
+                        if message.get("ruleId", "").startswith("security/") or message.get("ruleId", "").startswith("security-node/"):
                             findings.append({
                                 "file": file_path,
                                 "line": message.get("line", 0),
@@ -140,7 +158,7 @@ def run_eslint_scan(repo_path):
                     "message": "Failed to parse ESLint output.",
                     "findings": []
                 }
-        
+
         return {
             "success": True,
             "message": f"Scan completed. Found {len(findings)} security issues.",
@@ -162,10 +180,10 @@ def run_eslint_scan(repo_path):
 def run_js_sast_scan(repo_path):
     """
     Main function to run JavaScript SAST scanning.
-    
+
     Args:
         repo_path (str): Path to the repository
-        
+
     Returns:
         dict: Results of the scan
     """
@@ -175,7 +193,7 @@ def run_js_sast_scan(repo_path):
             "message": "No JavaScript files found in the repository.",
             "findings": []
         }
-    
+
     # Set up ESLint with security plugins
     setup_result = setup_eslint(repo_path)
     if not setup_result["success"]:
@@ -184,6 +202,6 @@ def run_js_sast_scan(repo_path):
             "message": setup_result["message"],
             "findings": []
         }
-    
+
     # Run the ESLint scan
     return run_eslint_scan(repo_path)

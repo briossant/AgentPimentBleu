@@ -8,6 +8,7 @@ from agent_piment_bleu.utils.git_utils import clone_repository
 from agent_piment_bleu.project_detector import detect_project_languages
 from agent_piment_bleu.reporting import generate_markdown_report
 from agent_piment_bleu.llm import create_llm_provider, get_llm_config
+from agent_piment_bleu.logger import get_logger
 
 def analyze_repository(repo_url, use_llm=True, llm_provider=None):
     """
@@ -21,21 +22,32 @@ def analyze_repository(repo_url, use_llm=True, llm_provider=None):
     Returns:
         str: Markdown formatted report of the analysis results
     """
+    # Get the logger
+    logger = get_logger()
+    logger.info(f"Starting analysis of repository: {repo_url}")
+
     # Create a temporary directory for the repository
     temp_dir = tempfile.mkdtemp()
+    logger.info(f"Created temporary directory: {temp_dir}")
 
     try:
         # Clone the repository
+        logger.info(f"Cloning repository: {repo_url}")
         clone_result = clone_repository(repo_url, temp_dir)
 
         if not clone_result["success"]:
+            logger.error(f"Failed to clone repository: {clone_result['message']}")
             return f"## Error\n\n{clone_result['message']}"
 
         # Detect languages used in the repository
+        logger.info("Detecting project languages")
         languages = detect_project_languages(temp_dir)
 
         if not languages:
+            logger.warning("No supported languages detected in the repository")
             return "## Error\n\nNo supported languages detected in the repository."
+
+        logger.info(f"Detected languages: {', '.join(languages)}")
 
         # Initialize results container
         scan_results = []
@@ -44,31 +56,39 @@ def analyze_repository(repo_url, use_llm=True, llm_provider=None):
         llm = None
         if use_llm:
             try:
+                logger.info(f"Initializing LLM provider: {llm_provider if llm_provider else 'default'}")
                 llm = create_llm_provider(llm_provider)
-                print(f"Using LLM provider: {llm.provider_name} with model: {llm.model_name}")
+                logger.info(f"Using LLM provider: {llm.provider_name} with model: {llm.model_name}")
             except Exception as e:
-                print(f"Failed to initialize LLM provider: {e}")
-                print("Continuing without LLM enhancement")
+                logger.error(f"Failed to initialize LLM provider: {e}")
+                logger.info("Continuing without LLM enhancement")
 
         # Run appropriate scanners for each detected language
         for language in languages:
             # Run SAST scanners
+            logger.info(f"Running SAST scan for language: {language}")
             sast_result = run_sast_scan(language, temp_dir)
             if sast_result:
                 # Enhance SAST results with LLM if available
                 if llm and sast_result.get('success', False) and sast_result.get('findings', []):
+                    logger.info(f"Enhancing SAST results with LLM for language: {language}")
                     sast_result = enhance_sast_with_llm(sast_result, llm, language)
                 scan_results.append(sast_result)
+                logger.info(f"SAST scan for {language} completed with {len(sast_result.get('findings', []))} findings")
 
             # Run SCA scanners
+            logger.info(f"Running SCA scan for language: {language}")
             sca_result = run_sca_scan(language, temp_dir)
             if sca_result:
                 # Enhance SCA results with LLM if available
                 if llm and sca_result.get('success', False) and sca_result.get('findings', []):
+                    logger.info(f"Enhancing SCA results with LLM for language: {language}")
                     sca_result = enhance_sca_with_llm(sca_result, llm, language, temp_dir)
                 scan_results.append(sca_result)
+                logger.info(f"SCA scan for {language} completed with {len(sca_result.get('findings', []))} findings")
 
         # Aggregate results
+        logger.info("Aggregating scan results")
         aggregated_results = {
             'repo_url': repo_url,
             'languages': languages,
@@ -77,15 +97,19 @@ def analyze_repository(repo_url, use_llm=True, llm_provider=None):
         }
 
         # Generate the report
+        logger.info("Generating markdown report")
         report = generate_markdown_report(aggregated_results)
+        logger.info("Report generation completed")
 
         return report
 
     except Exception as e:
+        logger.error(f"An unexpected error occurred during analysis: {str(e)}")
         return f"## Error\n\nAn unexpected error occurred: {str(e)}"
 
     finally:
         # Clean up the temporary directory
+        logger.info(f"Cleaning up temporary directory: {temp_dir}")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
 
@@ -100,11 +124,14 @@ def run_sast_scan(language, repo_path):
     Returns:
         dict: Results of the scan, or None if scanner not available
     """
+    logger = get_logger()
     try:
         # Import the appropriate scanner module
+        logger.info(f"Importing SAST scanner module for {language}")
         scanner_module = importlib.import_module(f"agent_piment_bleu.scanners.{language}.sast")
 
         # Run the scan
+        logger.info(f"Running {language} SAST scan")
         result = scanner_module.run_scan(repo_path)
 
         # Ensure the result has the standard format
@@ -116,9 +143,11 @@ def run_sast_scan(language, repo_path):
         return result
     except (ImportError, AttributeError):
         # Scanner not available for this language
+        logger.warning(f"SAST scanner not available for {language}")
         return None
     except Exception as e:
         # Scanner failed
+        logger.error(f"SAST scanner for {language} failed: {str(e)}")
         return {
             'success': False,
             'language': language,
@@ -140,11 +169,14 @@ def run_sca_scan(language, repo_path):
     Returns:
         dict: Results of the scan, or None if scanner not available
     """
+    logger = get_logger()
     try:
         # Import the appropriate scanner module
+        logger.info(f"Importing SCA scanner module for {language}")
         scanner_module = importlib.import_module(f"agent_piment_bleu.scanners.{language}.sca")
 
         # Run the scan
+        logger.info(f"Running {language} SCA scan")
         result = scanner_module.run_scan(repo_path)
 
         # Ensure the result has the standard format
@@ -156,9 +188,11 @@ def run_sca_scan(language, repo_path):
         return result
     except (ImportError, AttributeError):
         # Scanner not available for this language
+        logger.warning(f"SCA scanner not available for {language}")
         return None
     except Exception as e:
         # Scanner failed
+        logger.error(f"SCA scanner for {language} failed: {str(e)}")
         return {
             'success': False,
             'language': language,
@@ -256,6 +290,16 @@ def enhance_sca_with_llm(sca_result: Dict[str, Any], llm, language: str, repo_pa
                 'component': finding.get('package_name', 'Unknown'),
                 'cvss_score': finding.get('severity', 'Unknown')
             }
+
+            # Generate human-readable description of the CVE
+            try:
+                human_readable_description = llm.generate_cve_description(
+                    cve_info=cve_info
+                )
+                finding['human_readable_description'] = human_readable_description
+            except Exception as e:
+                print(f"Error generating human-readable CVE description: {e}")
+                finding['human_readable_description'] = "Could not generate a human-readable description."
 
             # Assess vulnerability impact with LLM
             impact_assessment = llm.assess_vulnerability_impact(

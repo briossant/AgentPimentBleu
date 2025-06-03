@@ -2,14 +2,15 @@ import os
 import subprocess
 import json
 import tempfile
+import shutil
 
 def run_scan(repo_path):
     """
     Run Python SAST scan on the repository using bandit.
-    
+
     Args:
         repo_path (str): Path to the repository
-        
+
     Returns:
         dict: Results of the scan with standardized format:
             - success (bool): True if scan was successful, False otherwise
@@ -29,10 +30,10 @@ def run_scan(repo_path):
             "message": "No Python files found in the repository.",
             "findings": []
         }
-    
+
     # Run bandit scan
     bandit_result = run_bandit_scan(repo_path)
-    
+
     # Convert to standardized format
     return {
         "success": bandit_result["success"],
@@ -47,15 +48,15 @@ def run_scan(repo_path):
 def standardize_findings(findings):
     """
     Convert bandit findings to standardized format.
-    
+
     Args:
         findings (list): List of bandit findings
-        
+
     Returns:
         list: List of findings in standardized format
     """
     standardized = []
-    
+
     for finding in findings:
         standardized.append({
             "file": finding.get("filename", "unknown"),
@@ -64,16 +65,30 @@ def standardize_findings(findings):
             "severity": finding.get("issue_severity", "medium").lower(),
             "message": finding.get("issue_text", "Unknown issue")
         })
-    
+
     return standardized
+
+def is_bandit_installed():
+    """
+    Check if bandit is installed on the system.
+
+    Returns:
+        bool: True if bandit is installed, False otherwise
+    """
+    try:
+        # Check if bandit is in the PATH
+        bandit_path = shutil.which("bandit")
+        return bandit_path is not None
+    except Exception:
+        return False
 
 def is_python_project(repo_path):
     """
     Check if the repository contains Python files.
-    
+
     Args:
         repo_path (str): Path to the repository
-        
+
     Returns:
         bool: True if Python files are found, False otherwise
     """
@@ -85,37 +100,45 @@ def is_python_project(repo_path):
         'pyproject.toml',
         'poetry.lock'
     ]
-    
+
     for dep_file in python_dependency_files:
         if os.path.isfile(os.path.join(repo_path, dep_file)):
             return True
-    
+
     # Check for Python files
     for root, _, files in os.walk(repo_path):
         for file in files:
             if file.endswith('.py'):
                 return True
-    
+
     return False
 
 def run_bandit_scan(repo_path):
     """
     Run bandit on Python files in the repository.
-    
+
     Args:
         repo_path (str): Path to the repository
-        
+
     Returns:
         dict: Results of the scan with keys:
             - success (bool): True if scan was successful, False otherwise
             - message (str): Error message if scan failed
             - findings (list): List of security issues found
     """
+    # Check if bandit is installed
+    if not is_bandit_installed():
+        return {
+            "success": False,
+            "message": "bandit is not installed. Please install it with 'pip install bandit'.",
+            "findings": []
+        }
+
     try:
         # Create a temporary file for the JSON output
         with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as temp_file:
             output_file = temp_file.name
-        
+
         # Run bandit with JSON output
         bandit_cmd = [
             "bandit", 
@@ -126,22 +149,22 @@ def run_bandit_scan(repo_path):
             "-o", 
             output_file
         ]
-        
+
         try:
             subprocess.run(bandit_cmd, check=True, capture_output=True)
         except subprocess.CalledProcessError as e:
             # Bandit returns non-zero exit code when issues are found
             # This is expected behavior, so we continue processing
             pass
-        
+
         # Read the JSON output
         with open(output_file, 'r') as f:
             try:
                 bandit_output = json.load(f)
-                
+
                 # Extract findings
                 results = bandit_output.get("results", [])
-                
+
                 return {
                     "success": True,
                     "message": f"Scan completed. Found {len(results)} security issues.",
@@ -153,7 +176,7 @@ def run_bandit_scan(repo_path):
                     "message": "Failed to parse bandit output.",
                     "findings": []
                 }
-        
+
     except Exception as e:
         return {
             "success": False,
