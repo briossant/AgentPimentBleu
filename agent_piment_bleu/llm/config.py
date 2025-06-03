@@ -20,7 +20,7 @@ DEFAULT_CONFIG = {
     "providers": {
         "ollama": {
             "base_url": "http://localhost:11434",
-            "model": "llama2",
+            "model": "llama3.2:1b",
             "timeout": 60
         },
         "modal": {

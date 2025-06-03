@@ -237,6 +237,20 @@ class LLMProvider(ABC):
 
         return description
 
+    def generate_text(self, prompt: str, **kwargs) -> str:
+        """
+        Generate a response from the LLM based on the given prompt.
+        This is an alias for the generate method to maintain compatibility.
+
+        Args:
+            prompt (str): The prompt to send to the LLM
+            **kwargs: Additional parameters
+
+        Returns:
+            str: The generated response
+        """
+        return self.generate(prompt, **kwargs)
+
     @property
     @abstractmethod
     def provider_name(self) -> str:
