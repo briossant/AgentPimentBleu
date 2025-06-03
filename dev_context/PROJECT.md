@@ -41,10 +41,12 @@ AgentPimentBleu is a Gradio-based application that:
     *   Detects common misconfigurations (hardcoded secrets, debug modes, etc.).
 *   **Intelligent SCA & Impact Assessment:**
     *   Identifies project dependencies and checks for CVEs using established tools/databases.
-    *   **AI-Powered Impact Analysis:** For each vulnerable dependency, the agent uses an LLM to:
-        *   Analyze how the dependency is used within the project codebase.
-        *   Assess the likelihood that the specific CVE is exploitable given the project's usage patterns.
-        *   Estimate the potential business/security impact if exploited.
+    *   **AI-Powered Impact Analysis:** For each vulnerable dependency, the agent uses an LLM to generate a comprehensive security vulnerability report with five key components:
+        *   **Project Severity Note:** Assessment of the severity of the vulnerability for the specific project.
+        *   **Is Project Impacted:** Determination of whether the project is likely impacted by the vulnerability (true/false).
+        *   **Potentially Impacted Code:** Identification of code patterns that might be vulnerable.
+        *   **Proposed Fix:** Specific suggestions for fixing the vulnerability.
+        *   **Human-Readable Explanation:** Clear explanation of the vulnerability and its implications.
 *   **Prioritized Reporting:** Generates a report that distinguishes between raw findings and vulnerabilities with a high likelihood of actual impact.
 *   **User-Friendly Gradio Interface:** Provides an intuitive web UI for input, progress tracking, and viewing results.
 

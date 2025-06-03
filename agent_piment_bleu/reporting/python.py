@@ -11,7 +11,7 @@ from agent_piment_bleu.reporting.base import BaseReporter
 class Reporter(BaseReporter):
     """
     Python reporter implementation.
-    
+
     This class provides Python-specific reporting functionality.
     """
 
@@ -35,7 +35,7 @@ class Reporter(BaseReporter):
             str: The report section for the failed scan
         """
         report = f"- {result['language'].capitalize()} {result['scan_type']} failed: {result['message']}\n"
-        
+
         # Python-specific error handling
         if 'bandit is not installed' in result['message']:
             report += "  - To fix this, please install bandit with: pip install bandit\n"
@@ -43,7 +43,7 @@ class Reporter(BaseReporter):
             report += "  - To fix this, please install pip-audit with: pip install pip-audit\n"
         elif 'requirements.txt' in result['message']:
             report += "  - Make sure your project has a requirements.txt file or use a virtual environment with the required dependencies installed\n"
-        
+
         return report
 
     def generate_sast_report(self, result: Dict[str, Any]) -> str:
@@ -64,7 +64,7 @@ class Reporter(BaseReporter):
                 report += f"- **{finding.get('rule', 'Unknown rule')}** ({finding.get('severity', 'unknown')})\n"
                 report += f"  - File: `{finding.get('file', 'unknown')}`, Line: {finding.get('line', 'N/A')}\n"
                 report += f"  - {finding.get('message', 'No description available')}\n"
-                
+
                 # Add Python-specific recommendations based on the rule
                 rule = finding.get('rule', '').lower()
                 if 'exec' in rule or 'eval' in rule:
@@ -83,7 +83,7 @@ class Reporter(BaseReporter):
                     report += "\n"
         else:
             report += f"No security issues found in {language} code.\n"
-        
+
         return report
 
     def generate_sca_report(self, result: Dict[str, Any]) -> str:
@@ -102,21 +102,54 @@ class Reporter(BaseReporter):
         if result['findings']:
             for finding in result['findings']:
                 # Generic format for Python dependencies
-                report += f"- **{finding.get('name', 'Unknown package')}** (severity: {finding.get('severity', 'unknown')})\n"
+                package_name = finding.get('name', finding.get('package', 'Unknown package'))
+                report += f"- **{package_name}** (severity: {finding.get('severity', 'unknown')})\n"
+
+                # Basic vulnerability information
                 report += f"  - {finding.get('message', 'No description available')}\n"
 
                 if finding.get('cve'):
                     report += f"  - CVE: {finding['cve']}\n"
-                    if finding.get('human_readable_description'):
-                        report += f"  - Description: {finding['human_readable_description']}\n"
 
-                # Add Python-specific recommendations
-                if finding.get('fix_version'):
-                    report += f"  - **Recommendation**: Update to version {finding['fix_version']} or later.\n\n"
+                # AI Agent Analysis Section
+                report += f"  - **AI Security Analysis**:\n"
+
+                # Project Severity
+                project_severity = finding.get('project_severity', 'Not assessed')
+                report += f"    - **Project Severity**: {project_severity}\n"
+
+                # Is Project Impacted
+                is_impacted = finding.get('is_project_impacted')
+                if is_impacted is not None:
+                    impact_text = "Yes" if is_impacted else "No"
+                    report += f"    - **Is Project Impacted**: {impact_text}\n"
                 else:
-                    report += f"  - **Recommendation**: Update to the latest version or consider using an alternative package.\n"
-                    report += f"  - You can update with: pip install --upgrade {finding.get('name', 'package-name')}\n\n"
+                    report += f"    - **Is Project Impacted**: Not determined\n"
+
+                # Potentially Impacted Code
+                impacted_code = finding.get('impacted_code')
+                if impacted_code:
+                    report += f"    - **Potentially Impacted Code**:\n      ```\n      {impacted_code}\n      ```\n"
+
+                # Proposed Fix
+                proposed_fix = finding.get('proposed_fix')
+                if proposed_fix:
+                    report += f"    - **Proposed Fix**: {proposed_fix}\n"
+                elif finding.get('fix_version'):
+                    report += f"    - **Proposed Fix**: Update to version {finding['fix_version']} or later.\n"
+                else:
+                    report += f"    - **Proposed Fix**: Update to the latest version or consider using an alternative package.\n"
+                    report += f"      You can update with: pip install --upgrade {package_name}\n"
+
+                # Explanation
+                explanation = finding.get('explanation')
+                if explanation:
+                    report += f"    - **Explanation**: {explanation}\n\n"
+                elif finding.get('human_readable_description'):
+                    report += f"    - **Explanation**: {finding['human_readable_description']}\n\n"
+                else:
+                    report += f"    - **Explanation**: This dependency has a known security vulnerability that could potentially affect your application.\n\n"
         else:
             report += f"No vulnerable dependencies found in {language} packages.\n"
-        
+
         return report

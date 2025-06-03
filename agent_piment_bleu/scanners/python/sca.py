@@ -53,18 +53,35 @@ def standardize_findings(findings):
         findings (list): List of pip-audit findings
 
     Returns:
-        list: List of findings in standardized format
+        list: List of findings in standardized format with text for AI agent analysis
     """
     standardized = []
 
     for finding in findings:
+        # Create a text representation of the vulnerability for AI agent analysis
+        vulnerability_text = f"""
+Package: {finding.get('name', 'unknown')}
+Version: {finding.get('version', 'unknown')}
+Severity: {finding.get('severity', 'medium')}
+Description: {finding.get('description', 'Unknown vulnerability')}
+CVE/ID: {finding.get('id', 'N/A')}
+Dependency File: {finding.get('dependency_file', 'requirements.txt')}
+"""
+
         standardized.append({
             "file": finding.get("dependency_file", "requirements.txt"),
             "line": 0,  # pip-audit doesn't provide line numbers
             "rule": f"vulnerable-dependency-{finding.get('name', 'unknown')}",
             "severity": finding.get("severity", "medium"),
             "message": finding.get("description", "Unknown vulnerability"),
-            "cve": finding.get("id", "N/A")
+            "cve": finding.get("id", "N/A"),
+            "name": finding.get("name", "unknown"),
+            "vulnerability_text": vulnerability_text,
+            "project_severity": "",  # To be filled by AI agent
+            "is_project_impacted": None,  # To be filled by AI agent
+            "impacted_code": "",  # To be filled by AI agent
+            "proposed_fix": "",  # To be filled by AI agent
+            "explanation": ""  # To be filled by AI agent
         })
 
     return standardized

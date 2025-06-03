@@ -52,18 +52,35 @@ def standardize_findings(findings):
         findings (list): List of npm audit findings
 
     Returns:
-        list: List of findings in standardized format
+        list: List of findings in standardized format with text for AI agent analysis
     """
     standardized = []
 
     for finding in findings:
+        # Create a text representation of the vulnerability for AI agent analysis
+        vulnerability_text = f"""
+Package: {finding.get('package', 'unknown')}
+Version: {finding.get('version', 'unknown')}
+Severity: {finding.get('severity', 'medium')}
+Title: {finding.get('title', 'Unknown vulnerability')}
+CVE: {finding.get('cve', 'N/A')}
+URL: {finding.get('url', 'N/A')}
+Recommendation: {finding.get('recommendation', 'Update to a patched version')}
+"""
+
         standardized.append({
             "file": "package.json",
             "line": 0,  # npm audit doesn't provide line numbers
             "rule": f"vulnerable-dependency-{finding.get('package', 'unknown')}",
             "severity": finding.get("severity", "medium"),
             "message": finding.get("title", "Unknown vulnerability"),
-            "cve": finding.get("cve", "N/A")
+            "cve": finding.get("cve", "N/A"),
+            "vulnerability_text": vulnerability_text,
+            "project_severity": "",  # To be filled by AI agent
+            "is_project_impacted": None,  # To be filled by AI agent
+            "impacted_code": "",  # To be filled by AI agent
+            "proposed_fix": "",  # To be filled by AI agent
+            "explanation": ""  # To be filled by AI agent
         })
 
     return standardized

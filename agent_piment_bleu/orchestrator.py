@@ -272,59 +272,114 @@ def enhance_sca_with_llm(sca_result: Dict[str, Any], llm, language: str, repo_pa
         Dict[str, Any]: Enhanced SCA results
     """
     enhanced_findings = []
+    logger = get_logger()
 
     for finding in sca_result.get('findings', []):
         try:
             # Extract relevant code snippets for the vulnerable dependency
+            package_name = finding.get('package', finding.get('package_name', ''))
             code_snippets = find_dependency_usage(
                 repo_path=repo_path,
-                dependency=finding.get('package_name', ''),
+                dependency=package_name,
                 language=language
             )
 
-            # Skip LLM analysis if no code snippets found
-            if not code_snippets:
-                enhanced_findings.append(finding)
-                continue
+            # Get vulnerability text for AI agent analysis
+            vulnerability_text = finding.get('vulnerability_text', '')
+            if not vulnerability_text:
+                # Create a text representation if not already present
+                vulnerability_text = f"""
+Package: {package_name}
+Version: {finding.get('version', 'unknown')}
+Severity: {finding.get('severity', 'medium')}
+Title: {finding.get('message', finding.get('title', 'Unknown vulnerability'))}
+CVE: {finding.get('cve', 'N/A')}
+"""
 
-            # Prepare CVE info for LLM
-            cve_info = {
-                'id': finding.get('vulnerability_id', 'Unknown'),
-                'description': finding.get('description', 'No description provided'),
-                'component': finding.get('package_name', 'Unknown'),
-                'cvss_score': finding.get('severity', 'Unknown')
-            }
+            # Prepare prompt for LLM analysis
+            prompt = f"""
+Analyze the following security vulnerability in a {language} dependency:
 
-            # Generate human-readable description of the CVE
+{vulnerability_text}
+
+Code snippets that might be using this dependency:
+{code_snippets if code_snippets else "No specific code snippets found."}
+
+Please provide the following information:
+1. Project severity note: Assess the severity of this vulnerability for the project (critical, high, medium, low, or info).
+2. Is project impacted: Determine if the project is likely impacted by this vulnerability (true/false).
+3. Potentially impacted code: Identify any code patterns that might be vulnerable.
+4. Proposed fix: Suggest a specific fix for this vulnerability.
+5. Human-readable explanation: Provide a clear explanation of the vulnerability and its implications.
+
+Format your response as follows:
+PROJECT_SEVERITY: [Your assessment]
+IS_PROJECT_IMPACTED: [true/false]
+IMPACTED_CODE: [Your assessment]
+PROPOSED_FIX: [Your suggestion]
+EXPLANATION: [Your explanation]
+"""
+
+            logger.info(f"Sending SCA vulnerability for LLM analysis: {package_name}")
+
+            # Get LLM analysis
             try:
-                human_readable_description = llm.generate_cve_description(
-                    cve_info=cve_info
-                )
-                finding['human_readable_description'] = human_readable_description
+                analysis_response = llm.generate_text(prompt)
+
+                # Parse the response to extract the required fields
+                project_severity = extract_field(analysis_response, "PROJECT_SEVERITY")
+                is_project_impacted = extract_field(analysis_response, "IS_PROJECT_IMPACTED")
+                impacted_code = extract_field(analysis_response, "IMPACTED_CODE")
+                proposed_fix = extract_field(analysis_response, "PROPOSED_FIX")
+                explanation = extract_field(analysis_response, "EXPLANATION")
+
+                # Convert is_project_impacted to boolean
+                is_project_impacted_bool = False
+                if is_project_impacted.lower() == "true":
+                    is_project_impacted_bool = True
+
+                # Add the analysis to the finding
+                finding['project_severity'] = project_severity
+                finding['is_project_impacted'] = is_project_impacted_bool
+                finding['impacted_code'] = impacted_code
+                finding['proposed_fix'] = proposed_fix
+                finding['explanation'] = explanation
+
+                # Keep the original LLM analysis fields for backward compatibility
+                finding['llm_analysis'] = {
+                    'is_vulnerable': is_project_impacted_bool,
+                    'confidence': 'medium',
+                    'impact': project_severity,
+                    'explanation': explanation,
+                    'remediation': proposed_fix,
+                    'provider': llm.provider_name,
+                    'model': llm.model_name
+                }
+
+                logger.info(f"Successfully analyzed vulnerability for {package_name}")
             except Exception as e:
-                print(f"Error generating human-readable CVE description: {e}")
-                finding['human_readable_description'] = "Could not generate a human-readable description."
+                logger.error(f"Error during LLM analysis: {e}")
+                # Set default values if analysis fails
+                finding['project_severity'] = finding.get('severity', 'unknown')
+                finding['is_project_impacted'] = True
+                finding['impacted_code'] = "Could not determine impacted code."
+                finding['proposed_fix'] = f"Update {package_name} to the latest version."
+                finding['explanation'] = f"This dependency has a known vulnerability. Please update to a patched version."
 
-            # Assess vulnerability impact with LLM
-            impact_assessment = llm.assess_vulnerability_impact(
-                cve_info=cve_info,
-                code_snippets=code_snippets
-            )
-
-            # Add LLM analysis to the finding
-            finding['llm_analysis'] = {
-                'is_vulnerable': impact_assessment.get('is_vulnerable', False),
-                'confidence': impact_assessment.get('confidence', 'low'),
-                'impact': impact_assessment.get('impact', 'unknown'),
-                'explanation': impact_assessment.get('explanation', 'No explanation provided'),
-                'remediation': impact_assessment.get('remediation', 'No remediation provided'),
-                'provider': llm.provider_name,
-                'model': llm.model_name
-            }
+                # Keep the original LLM analysis fields for backward compatibility
+                finding['llm_analysis'] = {
+                    'is_vulnerable': True,
+                    'confidence': 'low',
+                    'impact': finding.get('severity', 'unknown'),
+                    'explanation': "Could not analyze with LLM.",
+                    'remediation': f"Update {package_name} to the latest version.",
+                    'provider': llm.provider_name if llm else 'unknown',
+                    'model': llm.model_name if llm else 'unknown'
+                }
 
             enhanced_findings.append(finding)
         except Exception as e:
-            print(f"Error enhancing SCA finding with LLM: {e}")
+            logger.error(f"Error enhancing SCA finding with LLM: {e}")
             # Keep the original finding if enhancement fails
             enhanced_findings.append(finding)
 
@@ -333,6 +388,25 @@ def enhance_sca_with_llm(sca_result: Dict[str, Any], llm, language: str, repo_pa
     sca_result['llm_enhanced'] = True
 
     return sca_result
+
+
+def extract_field(text, field_name):
+    """
+    Extract a field from the LLM response.
+
+    Args:
+        text (str): The LLM response text
+        field_name (str): The name of the field to extract
+
+    Returns:
+        str: The extracted field value, or a default message if not found
+    """
+    import re
+    pattern = rf"{field_name}:\s*(.*?)(?:\n[A-Z_]+:|$)"
+    match = re.search(pattern, text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return f"No {field_name.lower()} provided."
 
 
 def find_dependency_usage(repo_path: str, dependency: str, language: str) -> List[str]:

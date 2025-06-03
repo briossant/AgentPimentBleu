@@ -39,9 +39,12 @@ This document outlines the development roadmap for AgentPimentBleu, an AI-powere
     *   [ ] For identified vulnerable dependencies:
         *   [ ] Basic code searching mechanism to identify where the dependency is imported/used (e.g., simple string matching for `import library_name`).
         *   [ ] Send CVE information + project usage snippets to an LLM.
-        *   [ ] **Prompt LLM to:**
-            *   Assess if the described CVE is likely relevant given the project's usage.
-            *   Provide a brief explanation of the potential impact *on this project*.
+        *   [ ] **Prompt LLM to generate a comprehensive security vulnerability report with five key components:**
+            *   **Project Severity Note:** Assessment of the severity of the vulnerability for the specific project.
+            *   **Is Project Impacted:** Determination of whether the project is likely impacted by the vulnerability (true/false).
+            *   **Potentially Impacted Code:** Identification of code patterns that might be vulnerable.
+            *   **Proposed Fix:** Specific suggestions for fixing the vulnerability.
+            *   **Human-Readable Explanation:** Clear explanation of the vulnerability and its implications.
 6.  **Report Generation & Display:**
     *   [ ] Structure the output to clearly differentiate:
         *   SAST findings (with any initial LLM comments).
