@@ -70,13 +70,11 @@
           shellHook = ''
             echo "AgentPimentBleu development environment"
             echo "Run 'python app.py' to start the application"
+            python -m venv venv
+            . venv/bin/activate
+            pip install modal rich
+            pip install "protobuf~=4.21.12"
           '';
-        };
-
-        # For nix run
-        apps.default = {
-          type = "app";
-          program = "${agentPimentBleu}/bin/agent-piment-bleu";
         };
       });
 }

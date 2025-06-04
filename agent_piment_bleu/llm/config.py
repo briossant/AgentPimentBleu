@@ -16,7 +16,7 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "llm_config.json")
 
 # Default configuration
 DEFAULT_CONFIG = {
-    "default_provider": "ollama",
+    "default_provider": "modal",
     "providers": {
         "ollama": {
             "base_url": "http://localhost:11434",
@@ -24,7 +24,7 @@ DEFAULT_CONFIG = {
             "timeout": 60
         },
         "modal": {
-            "model": "mistral-7b",
+            "model": "mistralai/Devstral-Small-2505",
             "timeout": 60
         }
     }
@@ -43,18 +43,18 @@ def get_llm_config() -> Dict[str, Any]:
     """
     Get the LLM configuration from the config file.
     If the config file doesn't exist, create it with default values.
-    
+
     Returns:
         Dict[str, Any]: The LLM configuration
     """
     ensure_config_dir()
-    
+
     if not os.path.exists(CONFIG_FILE):
         # Create default config file
         with open(CONFIG_FILE, 'w') as f:
             json.dump(DEFAULT_CONFIG, f, indent=2)
         return DEFAULT_CONFIG
-    
+
     try:
         with open(CONFIG_FILE, 'r') as f:
             config = json.load(f)
@@ -67,15 +67,15 @@ def get_llm_config() -> Dict[str, Any]:
 def save_llm_config(config: Dict[str, Any]) -> bool:
     """
     Save the LLM configuration to the config file.
-    
+
     Args:
         config (Dict[str, Any]): The configuration to save
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     ensure_config_dir()
-    
+
     try:
         with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
@@ -88,10 +88,10 @@ def save_llm_config(config: Dict[str, Any]) -> bool:
 def get_provider_config(provider_name: str) -> Optional[Dict[str, Any]]:
     """
     Get the configuration for a specific provider.
-    
+
     Args:
         provider_name (str): Name of the provider
-        
+
     Returns:
         Optional[Dict[str, Any]]: Provider configuration or None if not found
     """
@@ -103,7 +103,7 @@ def get_provider_config(provider_name: str) -> Optional[Dict[str, Any]]:
 def get_default_provider() -> str:
     """
     Get the name of the default LLM provider.
-    
+
     Returns:
         str: Name of the default provider
     """
@@ -114,19 +114,19 @@ def get_default_provider() -> str:
 def set_default_provider(provider_name: str) -> bool:
     """
     Set the default LLM provider.
-    
+
     Args:
         provider_name (str): Name of the provider to set as default
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     config = get_llm_config()
-    
+
     # Ensure the provider exists in the config
     if provider_name not in config.get("providers", {}):
         return False
-    
+
     config["default_provider"] = provider_name
     return save_llm_config(config)
 
@@ -134,18 +134,18 @@ def set_default_provider(provider_name: str) -> bool:
 def update_provider_config(provider_name: str, provider_config: Dict[str, Any]) -> bool:
     """
     Update the configuration for a specific provider.
-    
+
     Args:
         provider_name (str): Name of the provider
         provider_config (Dict[str, Any]): New provider configuration
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     config = get_llm_config()
-    
+
     if "providers" not in config:
         config["providers"] = {}
-    
+
     config["providers"][provider_name] = provider_config
     return save_llm_config(config)

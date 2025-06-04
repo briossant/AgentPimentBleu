@@ -27,6 +27,7 @@ except ImportError:
 from agent_piment_bleu.agent.tools import ProjectContext, get_tools
 from agent_piment_bleu.logger import get_logger
 from agent_piment_bleu.llm.base import LLMProvider
+from agent_piment_bleu.llm.langchain_modal_chat import LangchainModalChat # Adjust path if needed
 
 
 class SecurityAgent:
@@ -117,14 +118,8 @@ class SecurityAgent:
                 temperature=0  # Low temperature for tool use
             )
         elif hasattr(llm_provider, 'provider_name') and llm_provider.provider_name == 'modal':
-            # For Modal provider, we need a Langchain-compatible wrapper
-            # This is a placeholder for future implementation
-            self.logger.warning(
-                f"Modal provider detected ({llm_provider.model_name}). "
-                "Currently no direct Langchain integration exists for Modal. "
-                "Using provider directly, which may not be fully compatible with Langchain's agent architecture."
-            )
-            return llm_provider
+            self.logger.info(f"Creating LangchainModalChat wrapper for Modal provider with model: {llm_provider.model_name}")
+            return LangchainModalChat(modal_provider=llm_provider)
         else:
             # For other providers, we would need to implement similar adapters
             # For now, we'll just return the provider and hope it's compatible
@@ -160,9 +155,14 @@ You have access to the following tools:
 
 {tools}
 
-Use these tools to explore the codebase and analyze the vulnerability.
+Thought: Do I need to use a tool? Yes
+Action: The action to take. **Should be one of [{tool_names}]**
+Action Input: The input to the action
+Observation: The result of the action
 
-After your analysis, you MUST provide a final answer in the following JSON format:
+(This Thought/Action/Action Input/Observation can repeat N times)
+
+When you have gathered enough information, you MUST provide a final answer in the following JSON format:
 ```json
 {{
     "project_severity": "critical|high|medium|low|info",
@@ -177,6 +177,8 @@ Make sure your final answer is ONLY the JSON object, with no additional text bef
 
 Vulnerability information:
 {vulnerability_text}
+
+Begin!
 
 {agent_scratchpad}
 """
