@@ -12,6 +12,8 @@ import argparse
 import sys
 import uvicorn
 import json
+import threading
+import time
 
 from agentpimentbleu.config.config import get_settings
 from agentpimentbleu.core.graphs.sca_impact_graph import run_sca_scan
@@ -20,8 +22,22 @@ from agentpimentbleu.utils.logger import get_logger
 logger = get_logger()
 
 
+def run_api_in_thread():
+    """Run the FastAPI server in a separate thread."""
+    uvicorn.run("agentpimentbleu.api.main:app", host="0.0.0.0", port=8000)
+
+
 def run_ui():
-    """Run the Gradio UI."""
+    """Run the Gradio UI with API running in background."""
+    # Start the API in a separate thread
+    api_thread = threading.Thread(target=run_api_in_thread, daemon=True)
+    api_thread.start()
+
+    # Give the API a moment to start up
+    logger.info("Starting FastAPI server in background")
+    time.sleep(2)
+
+    # Start the UI
     logger.info("Starting Gradio UI")
     from agentpimentbleu.app.app import app
     app.launch(server_name="0.0.0.0")

@@ -18,10 +18,10 @@ class TestDependencyService(unittest.TestCase):
         """Set up test fixtures."""
         # Create a mock config
         self.mock_config = MagicMock()
-        
+
         # Create a mock manifest identifier
         self.mock_identifier = MagicMock(spec=BaseManifestIdentifier)
-        
+
         # Create the DependencyService with mocks
         self.dependency_service = DependencyService(
             config=self.mock_config,
@@ -32,13 +32,13 @@ class TestDependencyService(unittest.TestCase):
         """Test detecting project type and manifest."""
         # Set up the mock identifier to return a project type and manifest path
         self.mock_identifier.identify.return_value = ('python', '/path/to/requirements.txt')
-        
+
         # Call the method
         result = self.dependency_service.detect_project_type_and_manifest('/path/to/project')
-        
+
         # Assert the result
         self.assertEqual(result, ('python', '/path/to/requirements.txt'))
-        
+
         # Assert the mock was called
         self.mock_identifier.identify.assert_called_once_with('/path/to/project')
 
@@ -46,13 +46,13 @@ class TestDependencyService(unittest.TestCase):
         """Test detecting project type and manifest when not found."""
         # Set up the mock identifier to return None
         self.mock_identifier.identify.return_value = None
-        
+
         # Call the method
         result = self.dependency_service.detect_project_type_and_manifest('/path/to/project')
-        
+
         # Assert the result
         self.assertIsNone(result)
-        
+
         # Assert the mock was called
         self.mock_identifier.identify.assert_called_once_with('/path/to/project')
 
@@ -100,24 +100,24 @@ class TestDependencyService(unittest.TestCase):
             }
         })
         mock_run.return_value = mock_process
-        
+
         # Call the method
         result = self.dependency_service._run_npm_audit('/path/to/project')
-        
+
         # Assert the result
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['package_name'], 'lodash')
         self.assertEqual(result[0]['severity'], 'high')
-        
+
         # Assert the mock was called
         mock_run.assert_called_once()
 
     @patch('subprocess.run')
     def test_run_pip_audit_mocked(self, mock_run):
-        """Test running pip audit with mocked subprocess."""
-        # Set up the mock subprocess.run to return a sample pip audit output
+        """Test running pip-audit with mocked subprocess."""
+        # Set up the mock subprocess.run to return a sample pip-audit output
         mock_process = MagicMock()
-        mock_process.returncode = 1  # pip audit returns non-zero if vulnerabilities found
+        mock_process.returncode = 1  # pip-audit returns non-zero if vulnerabilities found
         mock_process.stdout = json.dumps({
             "vulnerabilities": [
                 {
@@ -138,16 +138,16 @@ class TestDependencyService(unittest.TestCase):
             ]
         })
         mock_run.return_value = mock_process
-        
+
         # Call the method
         result = self.dependency_service._run_pip_audit('/path/to/requirements.txt')
-        
+
         # Assert the result
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['package_name'], 'werkzeug')
         self.assertEqual(result[0]['vulnerable_version'], '0.10.0')
         self.assertEqual(result[0]['cve_ids'], ['CVE-2016-10149'])
-        
+
         # Assert the mock was called
         mock_run.assert_called_once()
 

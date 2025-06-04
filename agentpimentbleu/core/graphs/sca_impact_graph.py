@@ -1037,7 +1037,8 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
         scan_result = {
             "repo_source": repo_source,
             "vulnerabilities": final_vulnerabilities,
-            "error_message": error_message
+            "error_message": error_message,
+            "project_manifest_path": final_state.get("project_manifest_path")
         }
 
         logger.info(f"SCA scan completed for {repo_source}")
