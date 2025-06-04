@@ -31,6 +31,15 @@
             langchain-community
             langchain-ollama
             pydantic
+            fastapi
+            uvicorn
+            langgraph
+            llama-index
+            llama-index-embeddings-huggingface
+            python-dotenv
+            pyyaml
+            langchain-google-genai
+            pip-audit
           ];
 
           # No need for custom postInstall, entry_points in setup.py handles this
@@ -53,6 +62,10 @@
         # Development shell with all dependencies
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
+            # System dependencies
+            git
+
+            # Python and packages
             python
             pythonPackages.gradio
             pythonPackages.gitpython
@@ -62,6 +75,13 @@
             pythonPackages.langchain-community
             pythonPackages.langchain-ollama
             pythonPackages.pydantic
+            pythonPackages.fastapi
+            pythonPackages.uvicorn
+            pythonPackages.langgraph
+            pythonPackages.llama-index
+            pythonPackages.python-dotenv
+            pythonPackages.pyyaml
+            # ollama is not typically available in nixpkgs, would need to be added as an external dependency
             pythonPackages.pip
             pythonPackages.setuptools
             pythonPackages.wheel
@@ -69,7 +89,9 @@
 
           shellHook = ''
             echo "AgentPimentBleu development environment"
-            echo "Run 'python app.py' to start the application"
+            echo "Run 'python main.py ui' to start the Gradio UI"
+            echo "Run 'python main.py api' to start the FastAPI server"
+            echo "Run 'python main.py scan --repo_source <URL_OR_PATH>' to scan a repository"
           '';
         };
       });

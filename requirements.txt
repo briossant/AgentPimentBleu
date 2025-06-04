@@ -12,3 +12,19 @@ modal>=0.53.0; python_version >= "3.8"  # For Modal LLM provider (optional)
 google-generativeai>=0.3.0  # For Gemini LLM provider (optional)
 # Ollama should be installed separately: https://ollama.ai/download
 # Node.js and npm should be installed on the system for JavaScript scanning
+
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+gradio>=4.0.0
+langchain>=0.0.300
+langgraph>=0.0.20
+llama-index>=0.9.0
+llama-index-embeddings-huggingface>=0.1.0
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+requests>=2.31.0
+GitPython>=3.1.40
+pydantic>=2.0.0
+langchain-google-genai>=0.0.5
+langchain-community>=0.0.10
+pip-audit>=2.6.0

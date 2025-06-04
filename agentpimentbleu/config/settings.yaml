@@ -1,0 +1,26 @@
+# AgentPimentBleu Configuration Template
+
+# LLM Providers Configuration
+llm_providers:
+  gemini:
+    api_key: 'YOUR_GEMINI_API_KEY'
+    model: 'gemini-pro'
+  ollama:
+    base_url: 'http://localhost:11434'
+    model: 'llama2'
+
+# Dependency Parsers Configuration
+dependency_parsers:
+  python_manifests:
+    - 'requirements.txt'
+    - 'Pipfile'
+    - 'poetry.lock'
+  javascript_manifests:
+    - 'package.json'
+    - 'package-lock.json'
+    - 'yarn.lock'
+
+# RAG Settings
+rag_settings:
+  embedding_model: 'local'
+  chunk_size: 1024

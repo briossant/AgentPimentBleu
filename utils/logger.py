@@ -1,143 +1,104 @@
 """
 AgentPimentBleu - Logger module
 
-This module provides a Logger class that implements the singleton pattern
-for managing a logging box in the UI.
+This module provides a LoggerSingleton class that implements the singleton pattern
+for consistent logging across the application.
 """
 
-from typing import List, Optional
-import datetime
-import inspect
-import os
+import logging
+from typing import Optional
 
 
-class Logger:
+class LoggerSingleton:
     """
     Logger class implementing the singleton pattern.
-    Manages a logging box in the UI and provides methods for logging messages.
+    Ensures only one logger instance is created for the application.
     """
-    _instance: Optional['Logger'] = None
+    _instance: Optional['LoggerSingleton'] = None
+    _logger: Optional[logging.Logger] = None
 
-    def __new__(cls):
+    def __new__(cls, name: str = "AgentPimentBleu", level: int = logging.INFO):
         if cls._instance is None:
-            cls._instance = super(Logger, cls).__new__(cls)
-            cls._instance._logs = []
-            cls._instance._ui_callback = None
+            cls._instance = super(LoggerSingleton, cls).__new__(cls)
+            cls._instance._initialize_logger(name, level)
         return cls._instance
 
-    def __init__(self):
-        # The __init__ method will be called every time Logger() is called,
-        # but we only want to initialize once, so we check if _logs exists
-        if not hasattr(self, '_logs'):
-            self._logs = []
-            self._ui_callback = None
-
-    def set_ui_callback(self, callback):
+    def _initialize_logger(self, name: str, level: int):
         """
-        Set the callback function that updates the UI logging box.
+        Initialize the logger with a console handler and formatter.
 
         Args:
-            callback: Function that takes a string parameter (log content)
+            name (str): The name of the logger
+            level (int): The logging level (e.g., logging.INFO)
         """
-        self._ui_callback = callback
+        self._logger = logging.getLogger(name)
+        self._logger.setLevel(level)
 
-    def _format_log(self, message: str, level: str, caller_info=None) -> str:
+        # Clear any existing handlers to avoid duplicates
+        if self._logger.handlers:
+            self._logger.handlers.clear()
+
+        # Create console handler and set level
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+        # Add formatter to handler
+        console_handler.setFormatter(formatter)
+
+        # Add handler to logger
+        self._logger.addHandler(console_handler)
+
+    def set_level(self, level: int):
         """
-        Format a log message with timestamp, level, and caller information.
+        Change the logging level.
 
         Args:
-            message (str): The log message
-            level (str): The log level (INFO, WARNING, ERROR, DEBUG)
-            caller_info (tuple, optional): Tuple containing (function_name, filename, line_number)
-
-        Returns:
-            str: Formatted log message
+            level (int): The new logging level (e.g., logging.DEBUG, logging.INFO)
         """
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        if caller_info:
-            function_name, filename, line_number = caller_info
-            return f"[{timestamp}] [{level}] [{function_name}] {message}"
-        else:
-            return f"[{timestamp}] [{level}] {message}"
-
-    def _update_ui(self):
-        """Update the UI logging box if a callback is set."""
-        if self._ui_callback:
-            log_content = "\n".join(self._logs)
-            self._ui_callback(log_content)
-
-    def _get_caller_info(self, stack_level=2):
-        """
-        Get information about the calling function.
-
-        Args:
-            stack_level (int): How many levels up the stack to look (2 is the caller of the logging method)
-
-        Returns:
-            tuple: (function_name, filename, line_number)
-        """
-        frame = inspect.currentframe()
-        # Go up the stack to the caller of the logging method
-        for _ in range(stack_level):
-            if frame.f_back is not None:
-                frame = frame.f_back
-            else:
-                break
-
-        function_name = frame.f_code.co_name
-        filename = os.path.basename(frame.f_code.co_filename)
-        line_number = frame.f_lineno
-
-        return (function_name, filename, line_number)
-
-    def info(self, message: str):
-        """Log an informational message."""
-        caller_info = self._get_caller_info()
-        log_entry = self._format_log(message, "INFO", caller_info)
-        self._logs.insert(0, log_entry)
-        self._update_ui()
-        return log_entry
-
-    def warning(self, message: str):
-        """Log a warning message."""
-        caller_info = self._get_caller_info()
-        log_entry = self._format_log(message, "WARNING", caller_info)
-        self._logs.insert(0, log_entry)
-        self._update_ui()
-        return log_entry
-
-    def error(self, message: str):
-        """Log an error message."""
-        caller_info = self._get_caller_info()
-        log_entry = self._format_log(message, "ERROR", caller_info)
-        self._logs.insert(0, log_entry)
-        self._update_ui()
-        return log_entry
+        if self._logger:
+            self._logger.setLevel(level)
+            for handler in self._logger.handlers:
+                handler.setLevel(level)
 
     def debug(self, message: str):
         """Log a debug message."""
-        caller_info = self._get_caller_info()
-        log_entry = self._format_log(message, "DEBUG", caller_info)
-        self._logs.insert(0, log_entry)
-        self._update_ui()
-        return log_entry
+        if self._logger:
+            self._logger.debug(message)
 
-    def clear(self):
-        """Clear all logs."""
-        self._logs = []
-        self._update_ui()
+    def info(self, message: str):
+        """Log an informational message."""
+        if self._logger:
+            self._logger.info(message)
 
-    def get_logs(self) -> List[str]:
-        """Get all logs as a list of strings."""
-        return self._logs.copy()
+    def warning(self, message: str):
+        """Log a warning message."""
+        if self._logger:
+            self._logger.warning(message)
 
-    def get_logs_text(self) -> str:
-        """Get all logs as a single string."""
-        return "\n".join(self._logs)
+    def error(self, message: str):
+        """Log an error message."""
+        if self._logger:
+            self._logger.error(message)
+
+    def critical(self, message: str):
+        """Log a critical message."""
+        if self._logger:
+            self._logger.critical(message)
 
 
 # Convenience function to get the logger instance
-def get_logger() -> Logger:
-    """Get the singleton Logger instance."""
-    return Logger()
+def get_logger(name: str = "AgentPimentBleu", level: int = logging.INFO) -> LoggerSingleton:
+    """
+    Get the singleton Logger instance.
+
+    Args:
+        name (str): The name of the logger (default: "AgentPimentBleu")
+        level (int): The logging level (default: logging.INFO)
+
+    Returns:
+        LoggerSingleton: The singleton logger instance
+    """
+    return LoggerSingleton(name, level)
