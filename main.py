@@ -24,7 +24,7 @@ def run_ui():
     """Run the Gradio UI."""
     logger.info("Starting Gradio UI")
     from agentpimentbleu.app.app import app
-    app.launch()
+    app.launch(server_name="0.0.0.0")
 
 
 def run_api():
@@ -36,18 +36,18 @@ def run_api():
 def run_scan(repo_source):
     """
     Run a direct scan of a repository.
-    
+
     Args:
         repo_source (str): URL or local path to the repository
     """
     logger.info(f"Running scan on {repo_source}")
-    
+
     # Get the application configuration
     app_config = get_settings()
-    
+
     # Run the scan
     result = run_sca_scan(repo_source, app_config)
-    
+
     # Print the results
     print(json.dumps(result, indent=2))
 
@@ -56,20 +56,20 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="AgentPimentBleu - Smart Security Scanner for Git Repositories")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
-    
+
     # UI command
     ui_parser = subparsers.add_parser("ui", help="Run the Gradio UI")
-    
+
     # API command
     api_parser = subparsers.add_parser("api", help="Run the FastAPI server")
-    
+
     # Scan command
     scan_parser = subparsers.add_parser("scan", help="Run a direct scan of a repository")
     scan_parser.add_argument("--repo_source", required=True, help="URL or local path to the repository")
-    
+
     # Parse arguments
     args = parser.parse_args()
-    
+
     # Run the appropriate command
     if args.command == "ui":
         run_ui()

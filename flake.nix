@@ -38,8 +38,6 @@
             llama-index-embeddings-huggingface
             python-dotenv
             pyyaml
-            langchain-google-genai
-            pip-audit
           ];
 
           # No need for custom postInstall, entry_points in setup.py handles this

@@ -7,7 +7,7 @@ RUN apt-get update && \
     git \
     nodejs \
     npm && \
-    npm install -g npm@latest && \
+    npm install -g npm@9.6.7 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -25,4 +25,4 @@ COPY . .
 EXPOSE 7860
 
 # Set the command to run the Gradio app
-CMD ["python", "agentpimentbleu/app/app.py"]
+CMD ["python", "main.py", "ui"]

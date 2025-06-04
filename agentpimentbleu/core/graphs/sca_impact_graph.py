@@ -4,7 +4,7 @@ AgentPimentBleu - SCA Impact Graph
 This module defines the LangGraph for SCA and impact analysis.
 """
 
-from typing import Dict, List, Optional, TypedDict, Partial, Any, Callable
+from typing import Dict, List, Optional, TypedDict, Any, Callable
 import os
 
 from langgraph.graph import StateGraph, END
@@ -37,7 +37,7 @@ class ScaImpactState(TypedDict, total=False):
     error_message: Optional[str]  # Error message if any
 
 
-def prepare_scan_environment(state: ScaImpactState) -> Partial[ScaImpactState]:
+def prepare_scan_environment(state: ScaImpactState) -> Dict[str, Any]:
     """
     Prepare the scan environment by cloning the repository.
 
@@ -45,7 +45,7 @@ def prepare_scan_environment(state: ScaImpactState) -> Partial[ScaImpactState]:
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info(f"Preparing scan environment for {state['repo_source']}")
 
@@ -67,7 +67,7 @@ def prepare_scan_environment(state: ScaImpactState) -> Partial[ScaImpactState]:
         return {"cloned_repo_path": None, "error_message": error_message}
 
 
-def identify_project_and_run_audit_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def identify_project_and_run_audit_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Identify the project type and run the security audit.
 
@@ -75,7 +75,7 @@ def identify_project_and_run_audit_node(state: ScaImpactState) -> Partial[ScaImp
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info(f"Identifying project type and running audit for {state['cloned_repo_path']}")
 
@@ -134,7 +134,7 @@ def identify_project_and_run_audit_node(state: ScaImpactState) -> Partial[ScaImp
         }
 
 
-def build_rag_index_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def build_rag_index_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Build a RAG index for the project code.
 
@@ -142,7 +142,7 @@ def build_rag_index_node(state: ScaImpactState) -> Partial[ScaImpactState]:
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info(f"Building RAG index for {state['cloned_repo_path']}")
 
@@ -180,7 +180,7 @@ def build_rag_index_node(state: ScaImpactState) -> Partial[ScaImpactState]:
         return {"project_code_index_path": None, "error_message": error_message}
 
 
-def select_next_vulnerability_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def select_next_vulnerability_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Select the next vulnerability to process.
 
@@ -188,7 +188,7 @@ def select_next_vulnerability_node(state: ScaImpactState) -> Partial[ScaImpactSt
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info("Selecting next vulnerability to process")
 
@@ -222,7 +222,7 @@ def select_next_vulnerability_node(state: ScaImpactState) -> Partial[ScaImpactSt
         }
 
 
-def analyze_cve_description_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def analyze_cve_description_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Analyze the CVE description using LLM.
 
@@ -230,7 +230,7 @@ def analyze_cve_description_node(state: ScaImpactState) -> Partial[ScaImpactStat
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info("Analyzing CVE description")
 
@@ -317,7 +317,7 @@ def analyze_cve_description_node(state: ScaImpactState) -> Partial[ScaImpactStat
         return {"current_cve_analysis_results": None, "error_message": error_message}
 
 
-def search_codebase_for_impact_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Search the codebase for impact of the vulnerability.
 
@@ -325,7 +325,7 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Partial[ScaImpactS
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info("Searching codebase for impact")
 
@@ -499,7 +499,7 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Partial[ScaImpactS
         return {"error_message": error_message}
 
 
-def evaluate_impact_and_danger_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Evaluate the impact and danger of the vulnerability.
 
@@ -507,7 +507,7 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Partial[ScaImpactS
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info("Evaluating impact and danger")
 
@@ -611,7 +611,7 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Partial[ScaImpactS
         return {"error_message": error_message}
 
 
-def propose_fix_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Propose a fix for the vulnerability.
 
@@ -619,7 +619,7 @@ def propose_fix_node(state: ScaImpactState) -> Partial[ScaImpactState]:
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info("Proposing fix")
 
@@ -717,7 +717,7 @@ def propose_fix_node(state: ScaImpactState) -> Partial[ScaImpactState]:
         return {"error_message": error_message}
 
 
-def aggregate_cve_results_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def aggregate_cve_results_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Aggregate the results of the CVE analysis.
 
@@ -725,7 +725,7 @@ def aggregate_cve_results_node(state: ScaImpactState) -> Partial[ScaImpactState]
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info("Aggregating CVE results")
 
@@ -768,7 +768,7 @@ def aggregate_cve_results_node(state: ScaImpactState) -> Partial[ScaImpactState]
         return {"error_message": error_message}
 
 
-def cleanup_scan_environment_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def cleanup_scan_environment_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Clean up the scan environment.
 
@@ -776,7 +776,7 @@ def cleanup_scan_environment_node(state: ScaImpactState) -> Partial[ScaImpactSta
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info("Cleaning up scan environment")
 
@@ -794,7 +794,7 @@ def cleanup_scan_environment_node(state: ScaImpactState) -> Partial[ScaImpactSta
         return {"error_message": error_message}
 
 
-def compile_final_report_node(state: ScaImpactState) -> Partial[ScaImpactState]:
+def compile_final_report_node(state: ScaImpactState) -> Dict[str, Any]:
     """
     Compile the final report.
 
@@ -802,7 +802,7 @@ def compile_final_report_node(state: ScaImpactState) -> Partial[ScaImpactState]:
         state (ScaImpactState): Current state
 
     Returns:
-        Partial[ScaImpactState]: Updated state
+        Dict[str, Any]: Updated state
     """
     logger.info("Compiling final report")
 
