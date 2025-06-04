@@ -1,7 +1,7 @@
 import os
 import subprocess
 import json
-import shutil
+from agent_piment_bleu.scanners.js.utils import is_npm_installed
 
 def run_scan(repo_path):
     """
@@ -97,19 +97,6 @@ def has_package_json(repo_path):
     """
     return os.path.isfile(os.path.join(repo_path, 'package.json'))
 
-def is_npm_installed():
-    """
-    Check if npm is installed on the system.
-
-    Returns:
-        bool: True if npm is installed, False otherwise
-    """
-    try:
-        # Check if npm is in the PATH
-        npm_path = shutil.which("npm")
-        return npm_path is not None
-    except Exception:
-        return False
 
 def run_npm_audit(repo_path):
     """

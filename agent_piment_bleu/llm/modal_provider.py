@@ -164,10 +164,6 @@ class ModalProvider(LLMProvider):
 
     # Using the base class implementation for analyze_code
 
-    # Using the base class implementation for assess_vulnerability_impact
-
-    # Using the base class implementation for generate_cve_description
-
     @property
     def provider_name(self) -> str:
         """

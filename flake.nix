@@ -27,6 +27,10 @@
             gitpython
             requests
             pathspec
+            langchain
+            langchain-community
+            langchain-ollama
+            pydantic
           ];
 
           # No need for custom postInstall, entry_points in setup.py handles this
@@ -54,6 +58,10 @@
             pythonPackages.gitpython
             pythonPackages.requests
             pythonPackages.pathspec
+            pythonPackages.langchain
+            pythonPackages.langchain-community
+            pythonPackages.langchain-ollama
+            pythonPackages.pydantic
             pythonPackages.pip
             pythonPackages.setuptools
             pythonPackages.wheel

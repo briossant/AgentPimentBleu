@@ -2,8 +2,10 @@ import os
 import tempfile
 import shutil
 import importlib
-import importlib.resources
 import pkg_resources
+import errno
+import stat
+import subprocess
 from typing import Dict, Any, List, Optional
 
 from agent_piment_bleu.utils.git_utils import clone_repository
@@ -11,7 +13,7 @@ from agent_piment_bleu.project_detector import detect_project_languages
 from agent_piment_bleu.reporting import generate_markdown_report
 from agent_piment_bleu.llm import create_llm_provider, get_llm_config
 from agent_piment_bleu.logger import get_logger
-from agent_piment_bleu.agent import SecurityAgent
+from agent_piment_bleu.agent.security_agent import SecurityAgent
 
 # Special URL for testing with the dummy vulnerable JS project
 TEST_JS_VULN_URL = "test://js-vulnerable-project"
@@ -184,7 +186,74 @@ def analyze_repository(repo_url, use_llm=True, llm_provider=None):
         # Clean up the temporary directory
         logger.info(f"Cleaning up temporary directory: {temp_dir}")
         if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
+            try:
+                # Define error handler for shutil.rmtree
+                def handle_remove_readonly(func, path, exc):
+                    # Handle read-only files and directories
+                    excvalue = exc[1]
+                    if func in (os.rmdir, os.remove, os.unlink) and excvalue.errno == errno.EACCES:
+                        # Change file/directory permissions
+                        os.chmod(path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)  # 0o777
+                        # Retry the removal
+                        func(path)
+                    elif func == os.rmdir and excvalue.errno == errno.ENOTEMPTY:
+                        # Handle non-empty directory
+                        # First try to remove all contents with forced permissions
+                        for item in os.listdir(path):
+                            item_path = os.path.join(path, item)
+                            if os.path.isdir(item_path):
+                                try:
+                                    # Use shutil.rmtree with the same error handler
+                                    shutil.rmtree(item_path, onerror=handle_remove_readonly)
+                                except Exception as e:
+                                    logger.warning(f"Could not remove directory {item_path}: {e}")
+                            else:
+                                try:
+                                    os.chmod(item_path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)  # 0o777
+                                    os.remove(item_path)
+                                except Exception as e:
+                                    logger.warning(f"Could not remove file {item_path}: {e}")
+                        # Try again to remove the directory
+                        try:
+                            os.rmdir(path)
+                        except Exception as e:
+                            logger.warning(f"Could not remove directory {path} after clearing contents: {e}")
+                    else:
+                        # For other errors, just log and continue
+                        logger.warning(f"Error removing {path}: {excvalue}")
+
+                # Use shutil.rmtree with our custom error handler
+                shutil.rmtree(temp_dir, onerror=handle_remove_readonly)
+            except Exception as e:
+                logger.warning(f"Error while cleaning up temporary directory: {e}")
+                logger.info("Attempting to force remove with system commands...")
+
+                # As a last resort, try using system commands
+                try:
+                    if os.name == 'nt':  # Windows
+                        subprocess.run(['rd', '/s', '/q', temp_dir], check=False, shell=True)
+                    else:  # Unix/Linux/Mac
+                        subprocess.run(['rm', '-rf', temp_dir], check=False, shell=True)
+                except Exception as e:
+                    logger.warning(f"Failed to remove directory using system commands: {e}")
+
+                # Final check if the temp directory still exists
+                if os.path.exists(temp_dir):
+                    logger.warning(f"Temporary directory {temp_dir} may need manual cleanup")
+
+                    # Log specific directories that couldn't be removed
+                    try:
+                        for root, dirs, files in os.walk(temp_dir, topdown=False):
+                            for name in dirs:
+                                dir_path = os.path.join(root, name)
+                                if os.path.exists(dir_path):
+                                    logger.warning(f"Could not remove directory {name}: [Errno 39] Directory not empty: '{dir_path}'")
+                            for name in files:
+                                file_path = os.path.join(root, name)
+                                if os.path.exists(file_path):
+                                    logger.warning(f"Could not remove file {name}: [Errno 13] Permission denied: '{file_path}'")
+                    except Exception as e:
+                        logger.warning(f"Error while logging remaining files: {e}")
 
 def run_sast_scan(language, repo_path):
     """
@@ -301,10 +370,11 @@ def enhance_sast_with_llm(sast_result: Dict[str, Any], llm, language: str, repo_
     agent = None
     if repo_path is not None:
         try:
+            # Create the security agent
             agent = SecurityAgent(llm, repo_path)
             logger.info(f"Created SecurityAgent for SAST analysis in {repo_path}")
         except Exception as e:
-            logger.error(f"Failed to create SecurityAgent: {e}")
+            logger.error(f"Failed to create security agent: {e}")
 
     for finding in sast_result.get('findings', []):
         # Skip if no code snippet is available
@@ -314,7 +384,7 @@ def enhance_sast_with_llm(sast_result: Dict[str, Any], llm, language: str, repo_
 
         try:
             # If we have an agent and repo_path, use the agent for more comprehensive analysis
-            if agent and repo_path:
+            if repo_path is not None and agent is not None:
                 # Prepare the finding for agent analysis by adding vulnerability_text
                 code_snippet = finding.get('code_snippet', '')
                 finding['vulnerability_text'] = f"""
@@ -331,15 +401,15 @@ Code Snippet:
 ```
 """
 
-                logger.info(f"Using SecurityAgent to analyze SAST finding: {finding.get('rule', 'Unknown rule')}")
+                logger.info(f"Using security agent to analyze SAST finding: {finding.get('rule', 'Unknown rule')}")
 
                 try:
-                    # The agent will explore the codebase and analyze the vulnerability
+                    # Use the security agent to analyze the finding
                     analyzed_finding = agent.analyze_vulnerability(finding)
                     enhanced_findings.append(analyzed_finding)
                     logger.info(f"Successfully analyzed SAST finding with SecurityAgent")
                 except Exception as e:
-                    logger.error(f"Error during SecurityAgent SAST analysis: {e}")
+                    logger.error(f"Error during security agent SAST analysis: {e}")
                     # Fallback to simple analysis if agent fails
                     fallback_analysis = llm.analyze_code(
                         code=code_snippet,
@@ -382,8 +452,9 @@ Code Snippet:
     # Update the findings in the result
     sast_result['findings'] = enhanced_findings
     sast_result['llm_enhanced'] = True
-    if agent is not None and repo_path is not None:
+    if repo_path is not None and agent is not None:
         sast_result['agent_enhanced'] = True  # Mark as enhanced by the agent
+        sast_result['agent_type'] = 'langchain'  # Indicate the agent type
 
     return sast_result
 
@@ -408,10 +479,11 @@ def enhance_sca_with_llm(sca_result: Dict[str, Any], llm, language: str, repo_pa
     agent = None
     if repo_path is not None:
         try:
+            # Create the security agent
             agent = SecurityAgent(llm, repo_path)
             logger.info(f"Created SecurityAgent for exploring {repo_path}")
         except Exception as e:
-            logger.error(f"Failed to create SecurityAgent: {e}")
+            logger.error(f"Failed to create security agent: {e}")
 
     for finding in sca_result.get('findings', []):
         try:
@@ -429,21 +501,24 @@ CVE: {finding.get('cve', 'N/A')}
 """
                 finding['vulnerability_text'] = vulnerability_text
 
-            logger.info(f"Using SecurityAgent to analyze vulnerability: {finding.get('cve', 'Unknown CVE')}")
+            logger.info(f"Using security agent to analyze vulnerability: {finding.get('cve', 'Unknown CVE')}")
 
             # If we have an agent and repo_path, use the agent for more comprehensive analysis
-            if agent and repo_path:
+            if repo_path and agent is not None:
                 try:
-                    # The agent will explore the codebase and analyze the vulnerability
+                    # Use the security agent to analyze the vulnerability
                     analyzed_finding = agent.analyze_vulnerability(finding)
                     enhanced_findings.append(analyzed_finding)
                     logger.info(f"Successfully analyzed vulnerability with SecurityAgent")
                 except Exception as e:
-                    logger.error(f"Error during SecurityAgent analysis: {e}")
+                    logger.error(f"Error during security agent analysis: {e}")
                     # Fallback to simple analysis if agent fails
                     package_name = finding.get('package', finding.get('package_name', ''))
+                    # Continue with fallback analysis below
             else:
-                # Use a simpler analysis if no agent is available
+                # Use a simpler analysis if no agent is available or it's None
+                if agent is None:
+                    logger.warning("SecurityAgent is None, using fallback analysis")
                 package_name = finding.get('package', finding.get('package_name', ''))
 
                 # Set default values if analysis fails
@@ -473,8 +548,9 @@ CVE: {finding.get('cve', 'N/A')}
     # Update the findings in the result
     sca_result['findings'] = enhanced_findings
     sca_result['llm_enhanced'] = True
-    if agent is not None and repo_path is not None:
+    if repo_path is not None and agent is not None:
         sca_result['agent_enhanced'] = True  # Mark as enhanced by the agent
+        sca_result['agent_type'] = 'langchain'  # Indicate the agent type
 
     return sca_result
 

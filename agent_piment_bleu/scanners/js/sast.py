@@ -2,7 +2,7 @@ import os
 import subprocess
 import json
 import tempfile
-import shutil
+from agent_piment_bleu.scanners.js.utils import is_npm_installed
 
 def run_scan(repo_path):
     """
@@ -85,6 +85,11 @@ def is_js_project(repo_path):
     """
     Check if the repository contains JavaScript files.
 
+    Note: This function differs from _is_js_project() in project_detector.py
+    as it only checks for JavaScript source files, not package.json.
+    This is intentional because SAST scanning requires actual source files to analyze,
+    whereas the project_detector version is for general language detection.
+
     Args:
         repo_path (str): Path to the repository
 
@@ -97,19 +102,6 @@ def is_js_project(repo_path):
                 return True
     return False
 
-def is_npm_installed():
-    """
-    Check if npm is installed on the system.
-
-    Returns:
-        bool: True if npm is installed, False otherwise
-    """
-    try:
-        # Check if npm is in the PATH
-        npm_path = shutil.which("npm")
-        return npm_path is not None
-    except Exception:
-        return False
 
 def setup_eslint(repo_path):
     """
