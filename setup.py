@@ -16,9 +16,12 @@ setup(
     author="Brieuc Crosson",
     author_email="briossant.com@gmail.com",
     url="https://github.com/briossant/AgentPimentBleu",
-    packages=find_packages(),
+    packages=find_packages() + ['examples', 'examples.js_vuln', 'examples.js_vuln.views'],
     py_modules=["app"],
     include_package_data=True,
+    package_data={
+        'examples': ['js_vuln/*', 'js_vuln/views/*'],
+    },
     install_requires=requirements,
     entry_points={
         "console_scripts": [

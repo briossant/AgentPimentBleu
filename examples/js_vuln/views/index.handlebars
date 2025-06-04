@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}}</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Simple Web Application</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/search?q=test">Search</a></li>
+                <li><a href="/user?username=admin">User</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <section class="welcome">
+            <h2>Welcome to our application!</h2>
+            <p>This is a simple web application for demonstration purposes.</p>
+        </section>
+
+        <section class="features">
+            <h2>Features</h2>
+            <ul>
+                <li>RESTful API endpoints</li>
+                <li>User authentication</li>
+                <li>File handling</li>
+                <li>Search functionality</li>
+                <li>Proxy capabilities</li>
+            </ul>
+        </section>
+
+        <section class="demo">
+            <h2>Try it out</h2>
+            
+            <div class="demo-box">
+                <h3>Search</h3>
+                <form action="/search" method="GET">
+                    <input type="text" name="q" placeholder="Enter search term">
+                    <button type="submit">Search</button>
+                </form>
+            </div>
+            
+            <div class="demo-box">
+                <h3>User Lookup</h3>
+                <form action="/user" method="GET">
+                    <input type="text" name="username" placeholder="Enter username">
+                    <button type="submit">Look up</button>
+                </form>
+            </div>
+            
+            <div class="demo-box">
+                <h3>File Retrieval</h3>
+                <form action="/file" method="GET">
+                    <input type="text" name="name" placeholder="Enter file name">
+                    <button type="submit">Get File</button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2023 Simple Web Application. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // Vulnerable: jQuery usage with potential XSS
+        $(document).ready(function() {
+            // Get URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const message = urlParams.get('message');
+            
+            // Vulnerable: Directly inserting URL parameter into DOM
+            if (message) {
+                $('#message-container').html('<div class="message">' + message + '</div>');
+            }
+        });
+    </script>
+</body>
+</html>

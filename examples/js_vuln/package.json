@@ -1,0 +1,32 @@
+{
+  "name": "simple-web-app",
+  "version": "1.0.0",
+  "description": "A simple web application for demonstration purposes",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "web",
+    "app",
+    "demo"
+  ],
+  "author": "Demo User",
+  "license": "MIT",
+  "dependencies": {
+    "express": "4.16.0",
+    "lodash": "4.17.5",
+    "moment": "2.19.3",
+    "jquery": "3.3.1",
+    "axios": "0.18.0",
+    "minimist": "1.2.0",
+    "node-fetch": "2.3.0",
+    "handlebars": "4.0.11"
+  },
+  "devDependencies": {
+    "jest": "23.6.0",
+    "mocha": "5.2.0",
+    "eslint": "4.18.2"
+  }
+}

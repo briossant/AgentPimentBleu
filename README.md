@@ -10,6 +10,12 @@ AgentPimentBleu is an AI-powered agent designed to intelligently scan Git reposi
 
 1. Detecting coding mistakes and configuration errors with AI-enhanced context.
 2. Identifying vulnerable dependencies and, crucially, **assessing their actual impact** within the specific project's context, filtering out noise from irrelevant CVEs.
+3. Exploring the codebase to understand how vulnerabilities might affect the specific project.
+
+The agent follows a three-step process for each vulnerability:
+1. Analyze the vulnerability details (CVE information)
+2. Search for potential consequences in the codebase by exploring relevant files
+3. Generate a comprehensive report with project-specific severity assessment
 
 The goal is to provide developers with actionable, prioritized security insights, enabling them to focus on what truly matters.
 
@@ -20,9 +26,10 @@ This is the initial implementation of AgentPimentBleu, focusing on Phase 1 of th
 - [x] Basic Gradio UI with repository URL input
 - [x] Core functionality to clone and analyze Git repositories
 - [x] LLM Integration with Ollama and Modal
-- [ ] SAST Integration (coming soon)
-- [ ] SCA Integration (coming soon)
-- [ ] AI-Powered Dependency Impact Assessment (coming soon)
+- [x] SAST Integration with AI-enhanced analysis
+- [x] SCA Integration with npm audit and pip-audit
+- [x] AI-Powered Dependency Impact Assessment with codebase exploration
+- [x] Intelligent agent that explores the codebase to assess vulnerability impact
 
 ## Installation
 
@@ -60,6 +67,21 @@ This is the initial implementation of AgentPimentBleu, focusing on Phase 1 of th
 3. Enter a public Git repository URL in the input field and click "Scan Repository".
 
 4. The application will clone the repository and display the scan results.
+
+### Testing with Dummy Vulnerable Project
+
+For testing purposes, AgentPimentBleu includes a dummy vulnerable JavaScript project:
+
+1. Go to the "LLM Testing" tab in the UI.
+2. Click the "Use Dummy Project" button at the bottom of the left column.
+3. This will set the repository URL in the "Repository Scanner" tab to a special test URL.
+4. Go back to the "Repository Scanner" tab and click "Scan Repository".
+5. The application will use the local dummy project instead of cloning a repository.
+
+This dummy project contains intentional vulnerabilities for testing the agent's analysis capabilities:
+- Vulnerable dependencies in package.json
+- Code with security issues (XSS, SSRF, command injection, etc.)
+- Realistic project structure to test the agent's exploration capabilities
 
 ### LLM Configuration
 
@@ -125,6 +147,7 @@ This will create a result directory with the built package.
   - `main.py`: Entry point for the application, re-exports main functions
   - `ui.py`: Gradio UI implementation
   - `orchestrator.py`: Main orchestrator that coordinates the scanning process
+  - `agent.py`: Intelligent agent for exploring codebases and analyzing vulnerabilities
   - `project_detector.py`: Detects programming languages used in the repository
   - `reporting.py`: Generates formatted reports from scan results
   - `llm/`: LLM integration modules
@@ -142,6 +165,12 @@ This will create a result directory with the built package.
       - `sca.py`: Python SCA scanner using pip-audit
   - `utils/`: Utility functions
     - `git_utils.py`: Git repository handling functions
+- `examples/`: Example projects for testing
+  - `js_vuln/`: Dummy vulnerable JavaScript project
+    - `app.js`: Main application file with intentional vulnerabilities
+    - `utils.js`: Utility functions with some vulnerable patterns
+    - `package.json`: Dependencies with known vulnerabilities
+    - `views/`: Directory containing view templates
 
 ## Future Development
 

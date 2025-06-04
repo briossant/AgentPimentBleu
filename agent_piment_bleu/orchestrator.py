@@ -2,6 +2,8 @@ import os
 import tempfile
 import shutil
 import importlib
+import importlib.resources
+import pkg_resources
 from typing import Dict, Any, List, Optional
 
 from agent_piment_bleu.utils.git_utils import clone_repository
@@ -9,6 +11,10 @@ from agent_piment_bleu.project_detector import detect_project_languages
 from agent_piment_bleu.reporting import generate_markdown_report
 from agent_piment_bleu.llm import create_llm_provider, get_llm_config
 from agent_piment_bleu.logger import get_logger
+from agent_piment_bleu.agent import SecurityAgent
+
+# Special URL for testing with the dummy vulnerable JS project
+TEST_JS_VULN_URL = "test://js-vulnerable-project"
 
 def analyze_repository(repo_url, use_llm=True, llm_provider=None):
     """
@@ -31,13 +37,80 @@ def analyze_repository(repo_url, use_llm=True, llm_provider=None):
     logger.info(f"Created temporary directory: {temp_dir}")
 
     try:
-        # Clone the repository
-        logger.info(f"Cloning repository: {repo_url}")
-        clone_result = clone_repository(repo_url, temp_dir)
+        # Check if this is a test URL for the dummy vulnerable JS project
+        if repo_url == TEST_JS_VULN_URL:
+            # Use the dummy project instead of cloning
+            logger.info(f"Using dummy vulnerable JS project for testing")
 
-        if not clone_result["success"]:
-            logger.error(f"Failed to clone repository: {clone_result['message']}")
-            return f"## Error\n\n{clone_result['message']}"
+            # Try multiple methods to find the examples directory
+            dummy_project_path = None
+
+            # Method 1: Try to find it relative to the package
+            try:
+                dummy_project_path = pkg_resources.resource_filename('agent_piment_bleu', '../examples/js_vuln')
+                if os.path.exists(dummy_project_path):
+                    logger.info(f"Found dummy project using pkg_resources: {dummy_project_path}")
+                else:
+                    dummy_project_path = None
+            except (ImportError, ModuleNotFoundError):
+                logger.debug("Could not find examples using pkg_resources")
+
+            # Method 2: Try to find it relative to the current file
+            if not dummy_project_path:
+                try:
+                    dummy_project_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                                    "examples", "js_vuln")
+                    if os.path.exists(dummy_project_path):
+                        logger.info(f"Found dummy project relative to package: {dummy_project_path}")
+                    else:
+                        dummy_project_path = None
+                except Exception as e:
+                    logger.debug(f"Could not find examples relative to package: {e}")
+
+            # Method 3: Try to find it in the installation directory
+            if not dummy_project_path:
+                try:
+                    import agent_piment_bleu
+                    package_dir = os.path.dirname(os.path.dirname(agent_piment_bleu.__file__))
+                    dummy_project_path = os.path.join(package_dir, "examples", "js_vuln")
+                    if os.path.exists(dummy_project_path):
+                        logger.info(f"Found dummy project in installation directory: {dummy_project_path}")
+                    else:
+                        dummy_project_path = None
+                except Exception as e:
+                    logger.debug(f"Could not find examples in installation directory: {e}")
+
+            if not dummy_project_path or not os.path.exists(dummy_project_path):
+                error_msg = "Dummy project not found. Please ensure the examples/js_vuln directory is included in the package."
+                logger.error(error_msg)
+                return f"## Error\n\n{error_msg}"
+
+            # Copy the dummy project to the temp directory
+            try:
+                for item in os.listdir(dummy_project_path):
+                    src = os.path.join(dummy_project_path, item)
+                    dst = os.path.join(temp_dir, item)
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst)
+                    else:
+                        shutil.copy2(src, dst)
+            except TypeError as e:
+                if "expected str, bytes or os.PathLike object, not NoneType" in str(e):
+                    error_msg = "Failed to access dummy project path. Path is None."
+                    logger.error(error_msg)
+                    return f"## Error\n\n{error_msg}"
+                raise
+
+            logger.info(f"Copied dummy project to {temp_dir}")
+            clone_result = {"success": True, "message": "Dummy project copied successfully"}
+        else:
+            # Clone the repository
+            logger.info(f"Cloning repository: {repo_url}")
+            clone_result = clone_repository(repo_url, temp_dir)
+
+            if not clone_result["success"]:
+                logger.error(f"Failed to clone repository: {clone_result['message']}")
+                return f"## Error\n\n{clone_result['message']}"
 
         # Detect languages used in the repository
         logger.info("Detecting project languages")
@@ -72,7 +145,7 @@ def analyze_repository(repo_url, use_llm=True, llm_provider=None):
                 # Enhance SAST results with LLM if available
                 if llm and sast_result.get('success', False) and sast_result.get('findings', []):
                     logger.info(f"Enhancing SAST results with LLM for language: {language}")
-                    sast_result = enhance_sast_with_llm(sast_result, llm, language)
+                    sast_result = enhance_sast_with_llm(sast_result, llm, language, temp_dir)
                 scan_results.append(sast_result)
                 logger.info(f"SAST scan for {language} completed with {len(sast_result.get('findings', []))} findings")
 
@@ -208,7 +281,7 @@ def run_sca_scan(language, repo_path):
         }
 
 
-def enhance_sast_with_llm(sast_result: Dict[str, Any], llm, language: str) -> Dict[str, Any]:
+def enhance_sast_with_llm(sast_result: Dict[str, Any], llm, language: str, repo_path: str = None) -> Dict[str, Any]:
     """
     Enhance SAST results with LLM analysis.
 
@@ -216,11 +289,22 @@ def enhance_sast_with_llm(sast_result: Dict[str, Any], llm, language: str) -> Di
         sast_result (Dict[str, Any]): Original SAST results
         llm: LLM provider instance
         language (str): Programming language
+        repo_path (str, optional): Path to the repository for agent-based analysis
 
     Returns:
         Dict[str, Any]: Enhanced SAST results
     """
     enhanced_findings = []
+    logger = get_logger()
+
+    # Create a security agent if repo_path is provided and not None
+    agent = None
+    if repo_path is not None:
+        try:
+            agent = SecurityAgent(llm, repo_path)
+            logger.info(f"Created SecurityAgent for SAST analysis in {repo_path}")
+        except Exception as e:
+            logger.error(f"Failed to create SecurityAgent: {e}")
 
     for finding in sast_result.get('findings', []):
         # Skip if no code snippet is available
@@ -229,36 +313,82 @@ def enhance_sast_with_llm(sast_result: Dict[str, Any], llm, language: str) -> Di
             continue
 
         try:
-            # Analyze the code snippet with LLM
-            code_snippet = finding.get('code_snippet', '')
-            analysis = llm.analyze_code(
-                code=code_snippet,
-                language=language,
-                task='security'
-            )
+            # If we have an agent and repo_path, use the agent for more comprehensive analysis
+            if agent and repo_path:
+                # Prepare the finding for agent analysis by adding vulnerability_text
+                code_snippet = finding.get('code_snippet', '')
+                finding['vulnerability_text'] = f"""
+Type: SAST Finding
+Rule: {finding.get('rule', 'Unknown rule')}
+Severity: {finding.get('severity', 'medium')}
+Message: {finding.get('message', 'Unknown issue')}
+File: {finding.get('file', 'Unknown file')}
+Line: {finding.get('line', 'Unknown line')}
 
-            # Add LLM analysis to the finding
-            finding['llm_analysis'] = {
-                'summary': analysis.get('summary', 'No summary provided'),
-                'issues': analysis.get('issues', []),
-                'provider': llm.provider_name,
-                'model': llm.model_name
-            }
+Code Snippet:
+```{language}
+{code_snippet}
+```
+"""
 
-            enhanced_findings.append(finding)
+                logger.info(f"Using SecurityAgent to analyze SAST finding: {finding.get('rule', 'Unknown rule')}")
+
+                try:
+                    # The agent will explore the codebase and analyze the vulnerability
+                    analyzed_finding = agent.analyze_vulnerability(finding)
+                    enhanced_findings.append(analyzed_finding)
+                    logger.info(f"Successfully analyzed SAST finding with SecurityAgent")
+                except Exception as e:
+                    logger.error(f"Error during SecurityAgent SAST analysis: {e}")
+                    # Fallback to simple analysis if agent fails
+                    fallback_analysis = llm.analyze_code(
+                        code=code_snippet,
+                        language=language,
+                        task='security'
+                    )
+
+                    # Add LLM analysis to the finding
+                    finding['llm_analysis'] = {
+                        'summary': fallback_analysis.get('summary', 'No summary provided'),
+                        'issues': fallback_analysis.get('issues', []),
+                        'provider': llm.provider_name,
+                        'model': llm.model_name
+                    }
+
+                    enhanced_findings.append(finding)
+            else:
+                # Use the standard LLM analysis if no agent is available
+                code_snippet = finding.get('code_snippet', '')
+                analysis = llm.analyze_code(
+                    code=code_snippet,
+                    language=language,
+                    task='security'
+                )
+
+                # Add LLM analysis to the finding
+                finding['llm_analysis'] = {
+                    'summary': analysis.get('summary', 'No summary provided'),
+                    'issues': analysis.get('issues', []),
+                    'provider': llm.provider_name,
+                    'model': llm.model_name
+                }
+
+                enhanced_findings.append(finding)
         except Exception as e:
-            print(f"Error enhancing SAST finding with LLM: {e}")
+            logger.error(f"Error enhancing SAST finding with LLM: {e}")
             # Keep the original finding if enhancement fails
             enhanced_findings.append(finding)
 
     # Update the findings in the result
     sast_result['findings'] = enhanced_findings
     sast_result['llm_enhanced'] = True
+    if agent is not None and repo_path is not None:
+        sast_result['agent_enhanced'] = True  # Mark as enhanced by the agent
 
     return sast_result
 
 
-def enhance_sca_with_llm(sca_result: Dict[str, Any], llm, language: str, repo_path: str) -> Dict[str, Any]:
+def enhance_sca_with_llm(sca_result: Dict[str, Any], llm, language: str, repo_path: str = None) -> Dict[str, Any]:
     """
     Enhance SCA results with LLM analysis.
 
@@ -266,7 +396,7 @@ def enhance_sca_with_llm(sca_result: Dict[str, Any], llm, language: str, repo_pa
         sca_result (Dict[str, Any]): Original SCA results
         llm: LLM provider instance
         language (str): Programming language
-        repo_path (str): Path to the repository
+        repo_path (str, optional): Path to the repository
 
     Returns:
         Dict[str, Any]: Enhanced SCA results
@@ -274,20 +404,22 @@ def enhance_sca_with_llm(sca_result: Dict[str, Any], llm, language: str, repo_pa
     enhanced_findings = []
     logger = get_logger()
 
+    # Create a security agent if repo_path is provided and not None
+    agent = None
+    if repo_path is not None:
+        try:
+            agent = SecurityAgent(llm, repo_path)
+            logger.info(f"Created SecurityAgent for exploring {repo_path}")
+        except Exception as e:
+            logger.error(f"Failed to create SecurityAgent: {e}")
+
     for finding in sca_result.get('findings', []):
         try:
-            # Extract relevant code snippets for the vulnerable dependency
-            package_name = finding.get('package', finding.get('package_name', ''))
-            code_snippets = find_dependency_usage(
-                repo_path=repo_path,
-                dependency=package_name,
-                language=language
-            )
-
             # Get vulnerability text for AI agent analysis
             vulnerability_text = finding.get('vulnerability_text', '')
             if not vulnerability_text:
                 # Create a text representation if not already present
+                package_name = finding.get('package', finding.get('package_name', ''))
                 vulnerability_text = f"""
 Package: {package_name}
 Version: {finding.get('version', 'unknown')}
@@ -295,70 +427,25 @@ Severity: {finding.get('severity', 'medium')}
 Title: {finding.get('message', finding.get('title', 'Unknown vulnerability'))}
 CVE: {finding.get('cve', 'N/A')}
 """
+                finding['vulnerability_text'] = vulnerability_text
 
-            # Prepare prompt for LLM analysis
-            prompt = f"""
-Analyze the following security vulnerability in a {language} dependency:
+            logger.info(f"Using SecurityAgent to analyze vulnerability: {finding.get('cve', 'Unknown CVE')}")
 
-{vulnerability_text}
+            # If we have an agent and repo_path, use the agent for more comprehensive analysis
+            if agent and repo_path:
+                try:
+                    # The agent will explore the codebase and analyze the vulnerability
+                    analyzed_finding = agent.analyze_vulnerability(finding)
+                    enhanced_findings.append(analyzed_finding)
+                    logger.info(f"Successfully analyzed vulnerability with SecurityAgent")
+                except Exception as e:
+                    logger.error(f"Error during SecurityAgent analysis: {e}")
+                    # Fallback to simple analysis if agent fails
+                    package_name = finding.get('package', finding.get('package_name', ''))
+            else:
+                # Use a simpler analysis if no agent is available
+                package_name = finding.get('package', finding.get('package_name', ''))
 
-Code snippets that might be using this dependency:
-{code_snippets if code_snippets else "No specific code snippets found."}
-
-Please provide the following information:
-1. Project severity note: Assess the severity of this vulnerability for the project (critical, high, medium, low, or info).
-2. Is project impacted: Determine if the project is likely impacted by this vulnerability (true/false).
-3. Potentially impacted code: Identify any code patterns that might be vulnerable.
-4. Proposed fix: Suggest a specific fix for this vulnerability.
-5. Human-readable explanation: Provide a clear explanation of the vulnerability and its implications.
-
-Format your response as follows:
-PROJECT_SEVERITY: [Your assessment]
-IS_PROJECT_IMPACTED: [true/false]
-IMPACTED_CODE: [Your assessment]
-PROPOSED_FIX: [Your suggestion]
-EXPLANATION: [Your explanation]
-"""
-
-            logger.info(f"Sending SCA vulnerability for LLM analysis: {package_name}")
-
-            # Get LLM analysis
-            try:
-                analysis_response = llm.generate_text(prompt)
-
-                # Parse the response to extract the required fields
-                project_severity = extract_field(analysis_response, "PROJECT_SEVERITY")
-                is_project_impacted = extract_field(analysis_response, "IS_PROJECT_IMPACTED")
-                impacted_code = extract_field(analysis_response, "IMPACTED_CODE")
-                proposed_fix = extract_field(analysis_response, "PROPOSED_FIX")
-                explanation = extract_field(analysis_response, "EXPLANATION")
-
-                # Convert is_project_impacted to boolean
-                is_project_impacted_bool = False
-                if is_project_impacted.lower() == "true":
-                    is_project_impacted_bool = True
-
-                # Add the analysis to the finding
-                finding['project_severity'] = project_severity
-                finding['is_project_impacted'] = is_project_impacted_bool
-                finding['impacted_code'] = impacted_code
-                finding['proposed_fix'] = proposed_fix
-                finding['explanation'] = explanation
-
-                # Keep the original LLM analysis fields for backward compatibility
-                finding['llm_analysis'] = {
-                    'is_vulnerable': is_project_impacted_bool,
-                    'confidence': 'medium',
-                    'impact': project_severity,
-                    'explanation': explanation,
-                    'remediation': proposed_fix,
-                    'provider': llm.provider_name,
-                    'model': llm.model_name
-                }
-
-                logger.info(f"Successfully analyzed vulnerability for {package_name}")
-            except Exception as e:
-                logger.error(f"Error during LLM analysis: {e}")
                 # Set default values if analysis fails
                 finding['project_severity'] = finding.get('severity', 'unknown')
                 finding['is_project_impacted'] = True
@@ -371,58 +458,25 @@ EXPLANATION: [Your explanation]
                     'is_vulnerable': True,
                     'confidence': 'low',
                     'impact': finding.get('severity', 'unknown'),
-                    'explanation': "Could not analyze with LLM.",
+                    'explanation': "Could not analyze with SecurityAgent.",
                     'remediation': f"Update {package_name} to the latest version.",
                     'provider': llm.provider_name if llm else 'unknown',
                     'model': llm.model_name if llm else 'unknown'
                 }
 
-            enhanced_findings.append(finding)
+                enhanced_findings.append(finding)
         except Exception as e:
-            logger.error(f"Error enhancing SCA finding with LLM: {e}")
+            logger.error(f"Error enhancing SCA finding with SecurityAgent: {e}")
             # Keep the original finding if enhancement fails
             enhanced_findings.append(finding)
 
     # Update the findings in the result
     sca_result['findings'] = enhanced_findings
     sca_result['llm_enhanced'] = True
+    if agent is not None and repo_path is not None:
+        sca_result['agent_enhanced'] = True  # Mark as enhanced by the agent
 
     return sca_result
 
 
-def extract_field(text, field_name):
-    """
-    Extract a field from the LLM response.
-
-    Args:
-        text (str): The LLM response text
-        field_name (str): The name of the field to extract
-
-    Returns:
-        str: The extracted field value, or a default message if not found
-    """
-    import re
-    pattern = rf"{field_name}:\s*(.*?)(?:\n[A-Z_]+:|$)"
-    match = re.search(pattern, text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return f"No {field_name.lower()} provided."
-
-
-def find_dependency_usage(repo_path: str, dependency: str, language: str) -> List[str]:
-    """
-    Find code snippets that use the specified dependency.
-
-    Args:
-        repo_path (str): Path to the repository
-        dependency (str): Name of the dependency
-        language (str): Programming language
-
-    Returns:
-        List[str]: List of code snippets that use the dependency
-    """
-    # This is a simplified implementation that would need to be expanded
-    # for a production system to properly find all usages of a dependency
-
-    # For now, return an empty list as a placeholder
-    return []
+# Old LLM analysis code removed - now using SecurityAgent for analysis

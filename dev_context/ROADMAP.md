@@ -28,28 +28,28 @@ This document outlines the development roadmap for AgentPimentBleu, an AI-powere
     *   [x] Integrate JavaScript SAST using ESLint with security plugins.
     *   [x] Integrate Python SAST using Bandit.
     *   [x] Parse basic output from the SAST tools.
-    *   [ ] **LLM Enhancement (Proof of Concept):**
-        *   Send a few example SAST findings (code snippets) to an LLM.
-        *   Prompt LLM for a human-readable explanation of the risk.
+    *   [x] **LLM Enhancement (Proof of Concept):**
+        *   [x] Send a few example SAST findings (code snippets) to an LLM.
+        *   [x] Prompt LLM for a human-readable explanation of the risk.
 4.  **SCA Integration - Initial Pass:**
     *   [x] Integrate JavaScript SCA using npm audit.
     *   [x] Integrate Python SCA using pip-audit.
     *   [x] Parse basic dependency and CVE information.
 5.  **⭐ AI-Powered Dependency Impact Assessment (Core Feature):**
-    *   [ ] For identified vulnerable dependencies:
-        *   [ ] Basic code searching mechanism to identify where the dependency is imported/used (e.g., simple string matching for `import library_name`).
-        *   [ ] Send CVE information + project usage snippets to an LLM.
-        *   [ ] **Prompt LLM to generate a comprehensive security vulnerability report with five key components:**
-            *   **Project Severity Note:** Assessment of the severity of the vulnerability for the specific project.
-            *   **Is Project Impacted:** Determination of whether the project is likely impacted by the vulnerability (true/false).
-            *   **Potentially Impacted Code:** Identification of code patterns that might be vulnerable.
-            *   **Proposed Fix:** Specific suggestions for fixing the vulnerability.
-            *   **Human-Readable Explanation:** Clear explanation of the vulnerability and its implications.
+    *   [x] For identified vulnerable dependencies:
+        *   [x] Basic code searching mechanism to identify where the dependency is imported/used (e.g., simple string matching for `import library_name`).
+        *   [x] Send CVE information + project usage snippets to an LLM.
+        *   [x] **Prompt LLM to generate a comprehensive security vulnerability report with five key components:**
+            *   [x] **Project Severity Note:** Assessment of the severity of the vulnerability for the specific project.
+            *   [x] **Is Project Impacted:** Determination of whether the project is likely impacted by the vulnerability (true/false).
+            *   [x] **Potentially Impacted Code:** Identification of code patterns that might be vulnerable.
+            *   [x] **Proposed Fix:** Specific suggestions for fixing the vulnerability.
+            *   [x] **Human-Readable Explanation:** Clear explanation of the vulnerability and its implications.
 6.  **Report Generation & Display:**
-    *   [ ] Structure the output to clearly differentiate:
-        *   SAST findings (with any initial LLM comments).
-        *   SCA findings, highlighting those with AI-assessed impact.
-    *   [ ] Present findings in a readable Markdown format within the Gradio UI.
+    *   [x] Structure the output to clearly differentiate:
+        *   [x] SAST findings (with any initial LLM comments).
+        *   [x] SCA findings, highlighting those with AI-assessed impact.
+    *   [x] Present findings in a readable Markdown format within the Gradio UI.
 7.  **Hackathon Submission Requirements:**
     *   [ ] Working Gradio app deployed as a Hugging Face Space.
     *   [ ] `README.md` in the Space with the `agent-demo-track` tag.
@@ -60,6 +60,12 @@ This document outlines the development roadmap for AgentPimentBleu, an AI-powere
 ## Phase 2: Post-Hackathon Refinements (Short-Term) 🚀
 
 **Goal:** Improve the robustness, accuracy, and usability of the MVP. Expand initial capabilities.
+
+*   **Intelligent Agent for Codebase Exploration: ✓**
+    *   [x] Create a dedicated agent class for exploring codebases and analyzing vulnerabilities
+    *   [x] Implement project structure analysis (similar to tree command output)
+    *   [x] Add file exploration capabilities (reading files, searching for patterns)
+    *   [x] Implement a multi-step analysis process: analyze CVE, explore codebase, generate report
 
 *   **Enhanced SAST & SCA: ✓**
     *   [x] Implement modular architecture with standardized scanner interfaces
@@ -72,12 +78,12 @@ This document outlines the development roadmap for AgentPimentBleu, an AI-powere
     *   [x] Implement language detection to determine project types
     *   [x] Dynamically select appropriate scanners based on detected languages
 *   **Improved LLM Integration & Prompt Engineering:**
-    *   [ ] Refine prompts for better accuracy in impact assessment and code analysis
-    *   [ ] Develop more sophisticated methods for selecting and sending relevant code context to the LLM
-    *   [ ] Explore techniques to reduce LLM hallucination and improve consistency
-    *   [ ] Handle LLM API errors gracefully
+    *   [x] Refine prompts for better accuracy in impact assessment and code analysis
+    *   [x] Develop more sophisticated methods for selecting and sending relevant code context to the LLM
+    *   [x] Explore techniques to reduce LLM hallucination and improve consistency
+    *   [x] Handle LLM API errors gracefully
 *   **Advanced Code Usage Analysis (for SCA Impact):**
-    *   [ ] Move beyond simple import checking to identify specific function/method calls related to CVEs (might involve Abstract Syntax Tree (AST) parsing or more advanced LLM analysis)
+    *   [x] Move beyond simple import checking to identify specific function/method calls related to CVEs (implemented through the SecurityAgent's codebase exploration capabilities)
 *   **Gradio UI Enhancements:**
     *   [ ] More interactive report display (e.g., collapsible sections, severity filtering, links to CVE details)
     *   [ ] Clearer progress indicators and error messages
