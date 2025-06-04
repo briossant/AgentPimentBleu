@@ -9,5 +9,6 @@ langchain-ollama>=0.0.1
 pydantic>=2.0.0
 # Optional dependencies for LLM integration
 modal>=0.53.0; python_version >= "3.8"  # For Modal LLM provider (optional)
+google-generativeai>=0.3.0  # For Gemini LLM provider (optional)
 # Ollama should be installed separately: https://ollama.ai/download
 # Node.js and npm should be installed on the system for JavaScript scanning
