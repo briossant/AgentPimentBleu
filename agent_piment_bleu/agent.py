@@ -7,7 +7,11 @@ The agent uses an LLM to analyze CVEs and explore the codebase to find potential
 
 import os
 import subprocess
+import pathlib
 from typing import Dict, List, Any, Optional, Tuple
+import git
+from pathspec import PathSpec
+from pathspec.patterns import GitWildMatchPattern
 
 from agent_piment_bleu.llm.base import LLMProvider
 from agent_piment_bleu.logger import get_logger
@@ -16,18 +20,18 @@ from agent_piment_bleu.logger import get_logger
 class SecurityAgent:
     """
     Agent for exploring codebases and analyzing vulnerabilities.
-    
+
     This agent uses an LLM to analyze CVEs and explore the codebase to find potential vulnerabilities.
     It follows a three-step process:
     1. Analyze the CVE
     2. Search potential consequences in the codebase (by opening different files)
     3. Make a final report
     """
-    
+
     def __init__(self, llm: LLMProvider, repo_path: str):
         """
         Initialize the security agent.
-        
+
         Args:
             llm (LLMProvider): LLM provider to use for analysis
             repo_path (str): Path to the repository to analyze
@@ -36,24 +40,57 @@ class SecurityAgent:
         self.repo_path = repo_path
         self.logger = get_logger()
         self.conversation_history = []
-        
+
+    def _get_gitignore_spec(self) -> Optional[PathSpec]:
+        """
+        Get a PathSpec object from the .gitignore file in the repository.
+
+        Returns:
+            Optional[PathSpec]: PathSpec object from the .gitignore file, or None if no .gitignore file is found
+        """
+        try:
+            gitignore_path = os.path.join(self.repo_path, '.gitignore')
+            if not os.path.isfile(gitignore_path):
+                return None
+
+            with open(gitignore_path, 'r', encoding='utf-8', errors='replace') as f:
+                gitignore_content = f.read()
+
+            # Parse .gitignore content
+            patterns = []
+            for line in gitignore_content.splitlines():
+                line = line.strip()
+                # Skip empty lines and comments
+                if not line or line.startswith('#'):
+                    continue
+                patterns.append(line)
+
+            return PathSpec.from_lines(GitWildMatchPattern, patterns)
+        except Exception as e:
+            self.logger.error(f"Error reading .gitignore file: {e}")
+            return None
+
     def get_project_structure(self) -> str:
         """
         Get the structure of the project as a string (similar to tree command output).
-        
+        Respects .gitignore patterns to exclude build directories and other ignored files.
+
         Returns:
             str: Project structure as a string
         """
         try:
+            # Get gitignore spec
+            gitignore_spec = self._get_gitignore_spec()
+
             # Check if tree command is available
             result = subprocess.run(
                 ["which", "tree"], 
                 capture_output=True, 
                 text=True
             )
-            
-            if result.returncode == 0:
-                # Use tree command if available
+
+            if result.returncode == 0 and gitignore_spec is None:
+                # Use tree command if available and no gitignore spec
                 tree_result = subprocess.run(
                     ["tree", "-L", "3", self.repo_path], 
                     capture_output=True, 
@@ -61,34 +98,60 @@ class SecurityAgent:
                 )
                 return tree_result.stdout
             else:
-                # Fallback to a simple directory listing
+                # Fallback to a simple directory listing with gitignore filtering
                 structure = []
-                
+                repo_path_obj = pathlib.Path(self.repo_path)
+
                 for root, dirs, files in os.walk(self.repo_path):
                     # Limit depth to 3 levels
                     level = root.replace(self.repo_path, '').count(os.sep)
                     if level > 3:
                         continue
-                        
+
+                    # Get relative path for gitignore matching
+                    rel_root = os.path.relpath(root, self.repo_path)
+                    rel_root = '' if rel_root == '.' else rel_root
+
+                    # Filter directories based on gitignore
+                    if gitignore_spec:
+                        # Create a copy of dirs since we'll be modifying it
+                        dirs_copy = dirs.copy()
+                        for d in dirs_copy:
+                            rel_path = os.path.join(rel_root, d)
+                            if gitignore_spec.match_file(rel_path) or gitignore_spec.match_file(f"{rel_path}/"):
+                                dirs.remove(d)
+
+                    # Skip the root directory if it's ignored
+                    if gitignore_spec and rel_root and gitignore_spec.match_file(rel_root):
+                        continue
+
                     indent = ' ' * 4 * level
                     structure.append(f"{indent}{os.path.basename(root)}/")
-                    
+
+                    # Filter files based on gitignore
+                    filtered_files = files
+                    if gitignore_spec:
+                        filtered_files = [
+                            f for f in files 
+                            if not gitignore_spec.match_file(os.path.join(rel_root, f))
+                        ]
+
                     sub_indent = ' ' * 4 * (level + 1)
-                    for file in files:
+                    for file in filtered_files:
                         structure.append(f"{sub_indent}{file}")
-                
+
                 return '\n'.join(structure)
         except Exception as e:
             self.logger.error(f"Error getting project structure: {e}")
             return f"Error getting project structure: {e}"
-    
+
     def read_file(self, file_path: str) -> str:
         """
         Read the contents of a file.
-        
+
         Args:
             file_path (str): Path to the file to read
-            
+
         Returns:
             str: Contents of the file
         """
@@ -97,23 +160,23 @@ class SecurityAgent:
             full_path = os.path.join(self.repo_path, file_path)
             if not os.path.abspath(full_path).startswith(os.path.abspath(self.repo_path)):
                 return f"Error: Attempted to access file outside repository: {file_path}"
-                
+
             if not os.path.isfile(full_path):
                 return f"Error: File not found: {file_path}"
-                
+
             with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
                 return f.read()
         except Exception as e:
             self.logger.error(f"Error reading file {file_path}: {e}")
             return f"Error reading file {file_path}: {e}"
-    
+
     def find_files(self, pattern: str) -> List[str]:
         """
         Find files matching a pattern in the repository.
-        
+
         Args:
             pattern (str): Pattern to search for
-            
+
         Returns:
             List[str]: List of files matching the pattern
         """
@@ -124,26 +187,26 @@ class SecurityAgent:
                 capture_output=True,
                 text=True
             )
-            
+
             # Convert absolute paths to relative paths
             files = []
             for file in result.stdout.strip().split('\n'):
                 if file:
                     rel_path = os.path.relpath(file, self.repo_path)
                     files.append(rel_path)
-            
+
             return files
         except Exception as e:
             self.logger.error(f"Error finding files with pattern {pattern}: {e}")
             return []
-    
+
     def search_in_files(self, search_term: str) -> Dict[str, List[str]]:
         """
         Search for a term in all files in the repository.
-        
+
         Args:
             search_term (str): Term to search for
-            
+
         Returns:
             Dict[str, List[str]]: Dictionary mapping file paths to lists of matching lines
         """
@@ -154,7 +217,7 @@ class SecurityAgent:
                 capture_output=True,
                 text=True
             )
-            
+
             # Parse the results
             matches = {}
             for line in result.stdout.strip().split('\n'):
@@ -163,63 +226,63 @@ class SecurityAgent:
                     if len(parts) >= 2:
                         file_path = os.path.relpath(parts[0], self.repo_path)
                         content = parts[1]
-                        
+
                         if file_path not in matches:
                             matches[file_path] = []
-                        
+
                         matches[file_path].append(content.strip())
-            
+
             return matches
         except Exception as e:
             self.logger.error(f"Error searching for term {search_term}: {e}")
             return {}
-    
+
     def analyze_vulnerability(self, vulnerability: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyze a vulnerability using the agent.
-        
+
         This method implements the three-step process:
         1. Analyze the CVE
         2. Search potential consequences in the codebase
         3. Make a final report
-        
+
         Args:
             vulnerability (Dict[str, Any]): Vulnerability information
-            
+
         Returns:
             Dict[str, Any]: Analysis results
         """
         self.logger.info(f"Analyzing vulnerability: {vulnerability.get('cve', 'Unknown CVE')}")
-        
+
         # Reset conversation history
         self.conversation_history = []
-        
+
         # Step 1: Analyze the CVE
         cve_analysis = self._analyze_cve(vulnerability)
-        
+
         # Step 2: Search potential consequences in the codebase
         codebase_analysis = self._explore_codebase(vulnerability, cve_analysis)
-        
+
         # Step 3: Make the final report
         final_report = self._generate_final_report(vulnerability, cve_analysis, codebase_analysis)
-        
+
         # Update the vulnerability with the analysis results
         vulnerability.update(final_report)
-        
+
         return vulnerability
-    
+
     def _analyze_cve(self, vulnerability: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyze a CVE to understand its potential impact.
-        
+
         Args:
             vulnerability (Dict[str, Any]): Vulnerability information
-            
+
         Returns:
             Dict[str, Any]: CVE analysis results
         """
         self.logger.info("Step 1: Analyzing CVE")
-        
+
         # Get vulnerability text
         vulnerability_text = vulnerability.get('vulnerability_text', '')
         if not vulnerability_text:
@@ -232,7 +295,7 @@ Severity: {vulnerability.get('severity', 'medium')}
 Title: {vulnerability.get('message', vulnerability.get('title', 'Unknown vulnerability'))}
 CVE: {vulnerability.get('cve', 'N/A')}
 """
-        
+
         # Create prompt for CVE analysis
         prompt = f"""
 You are a security expert analyzing a vulnerability in a software dependency.
@@ -248,10 +311,10 @@ Please analyze this vulnerability and provide the following information:
 
 Format your response in a clear, concise manner.
 """
-        
+
         # Get LLM analysis
         response = self.llm.generate(prompt)
-        
+
         # Add to conversation history
         self.conversation_history.append({
             "role": "user",
@@ -261,31 +324,31 @@ Format your response in a clear, concise manner.
             "role": "assistant",
             "content": response
         })
-        
+
         # Return the analysis
         return {
             "cve_analysis": response
         }
-    
+
     def _explore_codebase(self, vulnerability: Dict[str, Any], cve_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
         Explore the codebase to find potential consequences of the vulnerability.
-        
+
         Args:
             vulnerability (Dict[str, Any]): Vulnerability information
             cve_analysis (Dict[str, Any]): Results of CVE analysis
-            
+
         Returns:
             Dict[str, Any]: Codebase exploration results
         """
         self.logger.info("Step 2: Exploring codebase for potential consequences")
-        
+
         # Get project structure
         project_structure = self.get_project_structure()
-        
+
         # Get package name
         package_name = vulnerability.get('package', vulnerability.get('package_name', ''))
-        
+
         # Create prompt for codebase exploration
         prompt = f"""
 You are a security expert analyzing a codebase to determine if it's affected by a vulnerability.
@@ -310,10 +373,10 @@ Please suggest:
 
 I'll help you explore the codebase based on your suggestions.
 """
-        
+
         # Get LLM suggestions
         response = self.llm.generate_with_context(prompt, self.conversation_history)
-        
+
         # Add to conversation history
         self.conversation_history.append({
             "role": "user",
@@ -323,10 +386,10 @@ I'll help you explore the codebase based on your suggestions.
             "role": "assistant",
             "content": response
         })
-        
+
         # Now let's actually explore the codebase based on the suggestions
         exploration_results = self._perform_exploration(response, package_name)
-        
+
         # Create a prompt with the exploration results
         prompt = f"""
 Based on your suggestions, I've explored the codebase. Here are the results:
@@ -338,10 +401,10 @@ Based on these findings, please analyze:
 2. What specific code patterns are concerning?
 3. What would you recommend to fix the issue?
 """
-        
+
         # Get LLM analysis of exploration results
         response = self.llm.generate_with_context(prompt, self.conversation_history)
-        
+
         # Add to conversation history
         self.conversation_history.append({
             "role": "user",
@@ -351,26 +414,26 @@ Based on these findings, please analyze:
             "role": "assistant",
             "content": response
         })
-        
+
         # Return the exploration results
         return {
             "exploration_results": exploration_results,
             "exploration_analysis": response
         }
-    
+
     def _perform_exploration(self, suggestions: str, package_name: str) -> str:
         """
         Perform exploration of the codebase based on LLM suggestions.
-        
+
         Args:
             suggestions (str): LLM suggestions for exploration
             package_name (str): Name of the vulnerable package
-            
+
         Returns:
             str: Results of the exploration
         """
         results = []
-        
+
         # Search for the package name in all files
         results.append(f"Searching for package '{package_name}' in all files:")
         matches = self.search_in_files(package_name)
@@ -383,7 +446,7 @@ Based on these findings, please analyze:
                     results.append(f"  ... ({len(lines) - 5} more matches)")
         else:
             results.append("  No direct matches found.")
-        
+
         # Look for package.json or requirements.txt to check if the package is declared as a dependency
         dependency_files = self.find_files("package.json") + self.find_files("requirements.txt")
         if dependency_files:
@@ -392,19 +455,19 @@ Based on these findings, please analyze:
                 results.append(f"\nFile: {file_path}")
                 content = self.read_file(file_path)
                 results.append(f"```\n{content[:1000]}{'...' if len(content) > 1000 else ''}\n```")
-        
+
         # Extract additional search terms from suggestions
         import re
         search_terms = re.findall(r'search for ["\']([^"\']+)["\']', suggestions, re.IGNORECASE)
         search_terms += re.findall(r'search term[s]?:?\s*["\']([^"\']+)["\']', suggestions, re.IGNORECASE)
         search_terms += re.findall(r'search for:?\s*["\']([^"\']+)["\']', suggestions, re.IGNORECASE)
         search_terms += re.findall(r'look for ["\']([^"\']+)["\']', suggestions, re.IGNORECASE)
-        
+
         # Remove duplicates and the package name (already searched)
         search_terms = list(set(search_terms))
         if package_name in search_terms:
             search_terms.remove(package_name)
-        
+
         # Search for additional terms
         if search_terms:
             results.append("\nSearching for additional terms suggested by the analysis:")
@@ -420,11 +483,11 @@ Based on these findings, please analyze:
                             results.append(f"  ... ({len(lines) - 3} more matches)")
                 else:
                     results.append("  No matches found.")
-        
+
         # Extract file patterns from suggestions
         file_patterns = re.findall(r'files? (?:named|called|like) ["\']([^"\']+)["\']', suggestions, re.IGNORECASE)
         file_patterns += re.findall(r'check (?:the )?file[s]? ["\']([^"\']+)["\']', suggestions, re.IGNORECASE)
-        
+
         # Search for specific files
         if file_patterns:
             results.append("\nSearching for specific files suggested by the analysis:")
@@ -440,23 +503,23 @@ Based on these findings, please analyze:
                         results.append(f"... ({len(files) - 3} more files)")
                 else:
                     results.append("  No matching files found.")
-        
+
         return "\n".join(results)
-    
+
     def _generate_final_report(self, vulnerability: Dict[str, Any], cve_analysis: Dict[str, Any], codebase_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate a final report based on the CVE analysis and codebase exploration.
-        
+
         Args:
             vulnerability (Dict[str, Any]): Vulnerability information
             cve_analysis (Dict[str, Any]): Results of CVE analysis
             codebase_analysis (Dict[str, Any]): Results of codebase exploration
-            
+
         Returns:
             Dict[str, Any]: Final report
         """
         self.logger.info("Step 3: Generating final report")
-        
+
         # Create prompt for final report
         prompt = f"""
 Based on our analysis of the vulnerability and exploration of the codebase, please provide a final assessment with the following information:
@@ -474,10 +537,10 @@ IMPACTED_CODE: [Your assessment]
 PROPOSED_FIX: [Your suggestion]
 EXPLANATION: [Your explanation]
 """
-        
+
         # Get LLM final report
         response = self.llm.generate_with_context(prompt, self.conversation_history)
-        
+
         # Add to conversation history
         self.conversation_history.append({
             "role": "user",
@@ -487,21 +550,21 @@ EXPLANATION: [Your explanation]
             "role": "assistant",
             "content": response
         })
-        
+
         # Parse the response to extract the required fields
         import re
-        
+
         project_severity = self._extract_field(response, "PROJECT_SEVERITY")
         is_project_impacted = self._extract_field(response, "IS_PROJECT_IMPACTED")
         impacted_code = self._extract_field(response, "IMPACTED_CODE")
         proposed_fix = self._extract_field(response, "PROPOSED_FIX")
         explanation = self._extract_field(response, "EXPLANATION")
-        
+
         # Convert is_project_impacted to boolean
         is_project_impacted_bool = False
         if is_project_impacted.lower() == "true":
             is_project_impacted_bool = True
-        
+
         # Return the final report
         return {
             "project_severity": project_severity,
@@ -519,15 +582,15 @@ EXPLANATION: [Your explanation]
                 "model": self.llm.model_name
             }
         }
-    
+
     def _extract_field(self, text: str, field_name: str) -> str:
         """
         Extract a field from the LLM response.
-        
+
         Args:
             text (str): The LLM response text
             field_name (str): The name of the field to extract
-            
+
         Returns:
             str: The extracted field value, or a default message if not found
         """

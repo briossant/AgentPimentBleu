@@ -26,6 +26,7 @@
             gradio
             gitpython
             requests
+            pathspec
           ];
 
           # No need for custom postInstall, entry_points in setup.py handles this
@@ -52,6 +53,7 @@
             pythonPackages.gradio
             pythonPackages.gitpython
             pythonPackages.requests
+            pythonPackages.pathspec
             pythonPackages.pip
             pythonPackages.setuptools
             pythonPackages.wheel

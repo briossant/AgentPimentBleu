@@ -11,6 +11,7 @@ AgentPimentBleu is an AI-powered agent designed to intelligently scan Git reposi
 1. Detecting coding mistakes and configuration errors with AI-enhanced context.
 2. Identifying vulnerable dependencies and, crucially, **assessing their actual impact** within the specific project's context, filtering out noise from irrelevant CVEs.
 3. Exploring the codebase to understand how vulnerabilities might affect the specific project.
+4. Respecting .gitignore files to avoid scanning build directories and other irrelevant files, reducing noise and improving performance.
 
 The agent follows a three-step process for each vulnerability:
 1. Analyze the vulnerability details (CVE information)
@@ -147,7 +148,7 @@ This will create a result directory with the built package.
   - `main.py`: Entry point for the application, re-exports main functions
   - `ui.py`: Gradio UI implementation
   - `orchestrator.py`: Main orchestrator that coordinates the scanning process
-  - `agent.py`: Intelligent agent for exploring codebases and analyzing vulnerabilities
+  - `agent.py`: Intelligent agent for exploring codebases and analyzing vulnerabilities (respects .gitignore files)
   - `project_detector.py`: Detects programming languages used in the repository
   - `reporting.py`: Generates formatted reports from scan results
   - `llm/`: LLM integration modules
