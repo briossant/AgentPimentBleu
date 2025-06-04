@@ -48,6 +48,9 @@ class RAGService:
         # Configure Llama-index settings based on the specified embedding model
         logger.info(f"Initializing Llama-index with embedding model: {embedding_model}")
 
+        # Explicitly set LLM to None to prevent using OpenAI as default
+        Settings.llm = None
+
         if embedding_model == 'local':
             # Use a local embedding model
             from llama_index.embeddings.huggingface import HuggingFaceEmbedding
@@ -180,8 +183,8 @@ class RAGService:
         logger.info(f"Querying index with: {query_text}")
 
         try:
-            # Create a query engine from the index
-            query_engine = index.as_query_engine()
+            # Create a query engine from the index with explicitly setting llm to None
+            query_engine = index.as_query_engine(llm=None)
 
             # Query the index
             response = query_engine.query(query_text)

@@ -128,6 +128,43 @@ Configuration is stored in `~/.config/agentpimentbleu/settings.yaml` with the fo
 
 Environment variables prefixed with `APB_` can override configuration values.
 
+### Setting up Gemini API Key
+
+AgentPimentBleu uses Google's Gemini API for LLM capabilities. You need to set up a valid API key to use this feature:
+
+1. **Get a Gemini API Key**:
+   - Visit [Google AI Studio](https://ai.google.dev/) and sign up or log in
+   - Create an API key from the API section
+
+2. **Configure the API Key** (choose one method):
+
+   a. **Using the configuration file**:
+   ```bash
+   # Edit your configuration file
+   nano ~/.config/agentpimentbleu/settings.yaml
+
+   # Update the gemini section with your API key
+   llm_providers:
+     gemini:
+       api_key: 'YOUR_ACTUAL_GEMINI_API_KEY'  # Replace with your actual API key
+       model: 'gemini-2.0-flash'
+   ```
+
+   b. **Using environment variables**:
+   ```bash
+   # Set the environment variable
+   export APB_LLM_PROVIDERS__GEMINI__API_KEY="YOUR_ACTUAL_GEMINI_API_KEY"
+
+   # Or add it to your .bashrc or .zshrc for persistence
+   echo 'export APB_LLM_PROVIDERS__GEMINI__API_KEY="YOUR_ACTUAL_GEMINI_API_KEY"' >> ~/.bashrc
+   ```
+
+   c. **For Docker**:
+   ```bash
+   # Pass the API key as an environment variable
+   docker run -p 7860:7860 -e APB_LLM_PROVIDERS__GEMINI__API_KEY="YOUR_ACTUAL_GEMINI_API_KEY" agentpimentbleu
+   ```
+
 ## Example Projects
 
 The repository includes example vulnerable projects for testing:

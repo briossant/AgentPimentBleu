@@ -740,9 +740,14 @@ def aggregate_cve_results_node(state: ScaImpactState) -> Dict[str, Any]:
         analysis_results = state['current_cve_analysis_results']
 
         # Create a VulnerabilityDetail object
+        # Ensure cve_link is a valid URL or None
+        cve_link = vuln_details.get('advisory_link')
+        if cve_link and not (cve_link.startswith('http://') or cve_link.startswith('https://')):
+            cve_link = None
+
         vulnerability_detail = {
             "cve_id": vuln_details.get('cve_ids', ['unknown'])[0] if vuln_details.get('cve_ids') else "unknown",
-            "cve_link": vuln_details.get('advisory_link'),
+            "cve_link": cve_link,
             "cve_description": vuln_details.get('advisory_title', 'No description available'),
             "package_name": vuln_details.get('package_name', 'unknown'),
             "vulnerable_version_range": f"<= {vuln_details.get('vulnerable_version', 'unknown')}",
@@ -760,7 +765,11 @@ def aggregate_cve_results_node(state: ScaImpactState) -> Dict[str, Any]:
 
         logger.info(f"Added vulnerability detail for {vuln_details.get('package_name', 'unknown')}")
 
-        return {"final_vulnerabilities": final_vulnerabilities}
+        # Clear any error message to prevent it from affecting the next vulnerability
+        return {
+            "final_vulnerabilities": final_vulnerabilities,
+            "error_message": None
+        }
 
     except Exception as e:
         error_message = f"Error aggregating CVE results: {e}"
@@ -898,10 +907,12 @@ def route_after_vulnerability_processing(state: ScaImpactState) -> str:
     Returns:
         str: Next node name
     """
+    # Always return to select_next_vulnerability_node to process the next vulnerability
+    # If there's an error, log it but continue with the next vulnerability
     if state.get('error_message'):
-        return "select_next_vulnerability_node"
-    else:
-        return "select_next_vulnerability_node"
+        logger.warning(f"Error during vulnerability processing: {state.get('error_message')}. Moving to next vulnerability.")
+
+    return "select_next_vulnerability_node"
 
 
 # Create the graph
@@ -1026,7 +1037,7 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
         }
 
         # Invoke the graph
-        result = graph.invoke(initial_state)
+        result = graph.invoke(initial_state, {"recursion_limit": 100})
 
         # Extract the relevant parts of the final state
         final_state = result.get("state", {})
@@ -1038,7 +1049,8 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
             "repo_source": repo_source,
             "vulnerabilities": final_vulnerabilities,
             "error_message": error_message,
-            "project_manifest_path": final_state.get("project_manifest_path")
+            "project_manifest_path": final_state.get("project_manifest_path"),
+            "audit_tool_vulnerabilities": final_state.get("audit_tool_vulnerabilities", [])
         }
 
         logger.info(f"SCA scan completed for {repo_source}")
