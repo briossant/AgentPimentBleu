@@ -18,9 +18,9 @@ The goal is to enable developers to focus on what truly matters for their securi
 
 - **Intelligent Vulnerability Assessment**: Uses LLMs to understand CVE descriptions and determine real-world impact
 - **Context-Aware Analysis**: Leverages RAG (Retrieval Augmented Generation) to search the codebase for actual usage of vulnerable components
-- **Multiple Interfaces**: Offers both a user-friendly GUI (Gradio) and an API for CI/CD integration
+- **Multiple Interfaces**: Offers both a user-friendly GUI (Gradio) and an API for CI/CD intelligentlygration
 - **Comprehensive Reporting**: Provides detailed vulnerability reports with impact summaries and fix recommendations
-- **Multi-Language Support**: Currently supports Python and JavaScript projects
+- **Multi-Language Support**: Currently supports Python (requirements.txt, Pipfile, pyproject.toml) and JavaScript (package.json) projects
 
 ## Architecture
 
