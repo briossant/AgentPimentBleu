@@ -745,15 +745,19 @@ def aggregate_cve_results_node(state: ScaImpactState) -> Dict[str, Any]:
         if cve_link and not (cve_link.startswith('http://') or cve_link.startswith('https://')):
             cve_link = None
 
+        # Ensure all string fields have valid string values, not None
+        advisory_title = vuln_details.get('advisory_title')
+        evidence_snippet = analysis_results.get('evidence_snippet')
+
         vulnerability_detail = {
             "cve_id": vuln_details.get('cve_ids', ['unknown'])[0] if vuln_details.get('cve_ids') else "unknown",
             "cve_link": cve_link,
-            "cve_description": vuln_details.get('advisory_title', 'No description available'),
+            "cve_description": advisory_title if advisory_title is not None else 'No description available',
             "package_name": vuln_details.get('package_name', 'unknown'),
             "vulnerable_version_range": f"<= {vuln_details.get('vulnerable_version', 'unknown')}",
             "analyzed_project_version": vuln_details.get('vulnerable_version', 'unknown'),
             "impact_in_project_summary": analysis_results.get('impact_summary', 'No impact assessment available'),
-            "evidence": [analysis_results.get('evidence_snippet', 'No evidence available')],
+            "evidence": [evidence_snippet if evidence_snippet is not None else 'No evidence available'],
             "danger_rating": analysis_results.get('danger_rating', 'Unknown'),
             "proposed_fix_summary": analysis_results.get('primary_fix_recommendation', 'No fix recommendation available'),
             "detailed_fix_guidance": ", ".join(analysis_results.get('alternative_mitigations', ['No detailed guidance available']))
@@ -1055,8 +1059,6 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
         }
 
         logger.info(f"SCA scan completed for {repo_source}")
-        print(result)
-        print(scan_result)
         return scan_result
 
     except Exception as e:
