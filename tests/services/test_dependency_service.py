@@ -137,7 +137,24 @@ class TestDependencyService(unittest.TestCase):
                         "id": "PYSEC-2019-123",
                         "link": "https://osv.dev/vulnerability/PYSEC-2019-123",
                         "aliases": ["CVE-2016-10149"],
-                        "description": "The debugger in Werkzeug before 0.11.0 allows remote code execution."
+                        "description": "The debugger in Werkzeug before 0.11.0 allows remote code execution.",
+                        "affected": [
+                            {
+                                "package": {
+                                    "name": "werkzeug",
+                                    "ecosystem": "PyPI"
+                                },
+                                "ranges": [
+                                    {
+                                        "type": "SEMVER",
+                                        "events": [
+                                            {"introduced": "0"},
+                                            {"fixed": "0.11.0"}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
                     },
                     "fix": {
                         "versions": ["0.11.0"]
@@ -154,7 +171,13 @@ class TestDependencyService(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['package_name'], 'werkzeug')
         self.assertEqual(result[0]['vulnerable_version'], '0.10.0')
+        self.assertEqual(result[0]['installed_version'], '0.10.0')
         self.assertEqual(result[0]['cve_ids'], ['CVE-2016-10149'])
+        self.assertEqual(result[0]['primary_advisory_id'], 'PYSEC-2019-123')
+        self.assertEqual(result[0]['advisory_link'], 'https://osv.dev/vulnerability/PYSEC-2019-123')
+        self.assertEqual(result[0]['advisory_title'], 'PYSEC-2019-123')
+        self.assertEqual(result[0]['advisory_vulnerable_range'], '<0.11.0')
+        self.assertEqual(result[0]['fix_suggestion_from_tool'], 'Update to one of these versions: 0.11.0')
 
         # Assert the mock was called
         mock_run.assert_called_once()

@@ -310,7 +310,7 @@ class DependencyService:
 
         try:
             result = subprocess.run(
-                ["pip-audit", "--json", "-r", manifest_path],
+                ["pip-audit", "-f", "json", "-r", manifest_path],
                 capture_output=True,
                 text=True,
                 check=False  # Don't raise an exception on non-zero exit code
@@ -372,7 +372,7 @@ class DependencyService:
             primary_advisory_id = None
 
             # Use the advisory_id as primary if it's a GHSA or OSV ID
-            if advisory_id and (advisory_id.startswith('GHSA-') or advisory_id.startswith('OSV-')):
+            if advisory_id and (advisory_id.startswith('GHSA-') or advisory_id.startswith('OSV-') or advisory_id.startswith('PYSEC-')):
                 primary_advisory_id = advisory_id
 
             if 'aliases' in vuln_info:
@@ -383,15 +383,39 @@ class DependencyService:
                     elif not primary_advisory_id and (alias.startswith('GHSA-') or alias.startswith('OSV-')):
                         primary_advisory_id = alias
 
+            # Parse affected version ranges from the 'affected' array
+            affected_ranges = []
+            if 'affected' in vuln_info and isinstance(vuln_info['affected'], list):
+                for aff_item in vuln_info['affected']:
+                    if 'ranges' in aff_item and isinstance(aff_item['ranges'], list):
+                        for r_item in aff_item['ranges']:
+                            if r_item.get('type') == 'SEMVER' and isinstance(r_item.get('events'), list):
+                                # Construct a human-readable range, e.g., "<0.11.0" or ">=1.0.0, <1.2.3"
+                                events = r_item['events']
+                                range_parts = []
+                                for e in events:
+                                    if "introduced" in e and e["introduced"] != "0":  # often 0 is not useful
+                                        range_parts.append(f">={e['introduced']}")
+                                    if "fixed" in e:
+                                        range_parts.append(f"<{e['fixed']}")
+                                    if "last_affected" in e:
+                                        range_parts.append(f"<={e['last_affected']}")
+                                if range_parts:
+                                    affected_ranges.append(", ".join(sorted(list(set(range_parts)))))  # sort for consistency
+
+            advisory_vulnerable_range = "; ".join(affected_ranges) if affected_ranges else None
+
             vulnerability = {
                 'package_name': package_name,
                 'vulnerable_version': package_version,
+                'installed_version': package_version,  # For 'analyzed_project_version'
                 'cve_ids': cve_ids,
                 'primary_advisory_id': primary_advisory_id,
                 'advisory_link': advisory_link,
                 'advisory_title': advisory_id,
                 'severity': severity,
-                'fix_suggestion_from_tool': fix_suggestion
+                'fix_suggestion_from_tool': fix_suggestion,
+                'advisory_vulnerable_range': advisory_vulnerable_range  # Add the parsed vulnerable range
             }
 
             vulnerabilities.append(vulnerability)
