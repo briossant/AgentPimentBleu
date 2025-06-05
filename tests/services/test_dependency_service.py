@@ -109,6 +109,14 @@ class TestDependencyService(unittest.TestCase):
         self.assertEqual(result[0]['package_name'], 'lodash')
         self.assertEqual(result[0]['severity'], 'high')
 
+        # Assert the new fields added in our enhancement
+        self.assertEqual(result[0]['installed_version'], '<4.17.11')  # From vuln_info.get('range')
+        self.assertEqual(result[0]['advisory_vulnerable_range'], '<4.17.11')  # From via[0].get('range')
+        self.assertEqual(result[0]['cve_ids'], ['CVE-2020-8203'])  # Should now extract the CVE ID
+        self.assertEqual(result[0]['advisory_title'], 'Prototype Pollution')  # From via[0].get('title')
+        self.assertEqual(result[0]['advisory_link'], 'https://npmjs.com/advisories/1065')  # From via[0].get('url')
+        self.assertEqual(result[0]['fix_suggestion_from_tool'], 'Update to version 4.17.21')
+
         # Assert the mock was called
         mock_run.assert_called_once()
 

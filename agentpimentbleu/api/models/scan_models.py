@@ -20,6 +20,7 @@ class VulnerabilityDetail(BaseModel):
     Model for a vulnerability detail.
     """
     cve_id: str
+    primary_advisory_id: Optional[str] = None
     cve_link: Optional[HttpUrl] = None
     cve_description: str
     package_name: str

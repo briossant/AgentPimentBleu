@@ -175,20 +175,76 @@ class DependencyService:
                 if vuln_info.get('severity') == 'info':
                     continue  # Skip informational findings
 
-                # Extract CVE IDs
-                cve_ids = []
-                if 'via' in vuln_info:
-                    if isinstance(vuln_info['via'], list):
-                        for via_item in vuln_info['via']:
-                            if isinstance(via_item, dict) and 'url' in via_item:
-                                # Extract CVE ID from URL or title if possible
-                                cve_id = self._extract_cve_id(via_item.get('url', ''))
-                                if cve_id:
-                                    cve_ids.append(cve_id)
-                                elif 'title' in via_item and 'CVE-' in via_item['title']:
-                                    cve_id = self._extract_cve_id(via_item['title'])
-                                    if cve_id:
-                                        cve_ids.append(cve_id)
+                # Initialize with top-level info, but prioritize 'via' items
+                initial_advisory_title = vuln_info.get('title')
+                initial_advisory_link = vuln_info.get('url')
+
+                # 'range' at vuln_info level often is the installed version or its vulnerable range.
+                # This is good for 'analyzed_project_version'.
+                installed_version_str = vuln_info.get("version", vuln_info.get("range", "unknown"))
+
+                # This will hold the specific advisory's vulnerable range (e.g., "<4.17.21")
+                advisory_vulnerable_range = None
+
+                # Attempt to get CVEs from a direct 'cves' array if present in vuln_info
+                extracted_cve_ids = list(vuln_info.get('cves', []))
+
+                # Extract primary advisory ID (could be GHSA, etc.)
+                primary_advisory_id = None
+                # Check if there's an advisory ID in the name field (common for GHSA)
+                if 'name' in vuln_info and isinstance(vuln_info['name'], str):
+                    if vuln_info['name'].startswith('GHSA-') or vuln_info['name'].startswith('OSV-'):
+                        primary_advisory_id = vuln_info['name']
+
+                # Iterate through 'via' items to get the best details
+                best_via_title = None
+                best_via_link = None
+
+                if 'via' in vuln_info and isinstance(vuln_info['via'], list) and vuln_info['via']:
+                    for item in vuln_info['via']:
+                        if isinstance(item, dict):
+                            # Prioritize the first found non-empty values or overwrite if a better one is found
+                            if item.get('title') and not best_via_title:
+                                best_via_title = item.get('title')
+                            if item.get('url') and not best_via_link:
+                                best_via_link = item.get('url')
+                            if item.get('range') and not advisory_vulnerable_range: # Get range from advisory
+                                advisory_vulnerable_range = item.get('range')
+
+                            # Extract CVEs from this 'via' item's title or URL
+                            if item.get('title'):
+                                cve_from_title = self._extract_cve_id(item.get('title', ''))
+                                if cve_from_title and cve_from_title not in extracted_cve_ids:
+                                    extracted_cve_ids.append(cve_from_title)
+                            if item.get('url'): # GHSA URLs are common, _extract_cve_id might not find CVEs here
+                                cve_from_url = self._extract_cve_id(item.get('url', ''))
+                                if cve_from_url and cve_from_url not in extracted_cve_ids:
+                                    extracted_cve_ids.append(cve_from_url)
+
+                                # Check for GHSA or OSV IDs in URL
+                                url = item.get('url', '')
+                                if 'ghsa' in url.lower() and not primary_advisory_id:
+                                    # Extract GHSA-xxxx-xxxx-xxxx pattern
+                                    import re
+                                    ghsa_match = re.search(r'GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}', url, re.IGNORECASE)
+                                    if ghsa_match:
+                                        primary_advisory_id = ghsa_match.group(0).upper()
+
+                            # Check for direct 'cves' array in 'via' item (less common but possible)
+                            direct_via_cves = item.get('cves', [])
+                            for cve in direct_via_cves:
+                                if cve not in extracted_cve_ids:
+                                    extracted_cve_ids.append(cve)
+
+                            # Check if this item has a source ID that could be an advisory ID
+                            if item.get('source') and isinstance(item.get('source'), str) and not primary_advisory_id:
+                                source = item.get('source')
+                                if source.startswith('GHSA-') or source.startswith('OSV-'):
+                                    primary_advisory_id = source
+
+                # Consolidate titles and links
+                final_advisory_title = best_via_title if best_via_title else initial_advisory_title
+                final_advisory_link = best_via_link if best_via_link else initial_advisory_link
 
                 # Get fix information
                 fix_suggestion = None
@@ -200,12 +256,14 @@ class DependencyService:
 
                 vulnerability = {
                     'package_name': name,
-                    'vulnerable_version': vuln_info.get('version', 'unknown'),
-                    'cve_ids': cve_ids,
-                    'advisory_link': vuln_info.get('url', None),
-                    'advisory_title': vuln_info.get('title', None),
+                    'installed_version': installed_version_str, # For 'analyzed_project_version'
+                    'cve_ids': list(set(extracted_cve_ids)) if extracted_cve_ids else [], # Deduplicate
+                    'primary_advisory_id': primary_advisory_id, # Could be GHSA, OSV, etc.
+                    'advisory_link': final_advisory_link,
+                    'advisory_title': final_advisory_title,
                     'severity': vuln_info.get('severity', 'unknown'),
-                    'fix_suggestion_from_tool': fix_suggestion
+                    'fix_suggestion_from_tool': fix_suggestion,
+                    'advisory_vulnerable_range': advisory_vulnerable_range # e.g., "<4.17.21"
                 }
 
                 vulnerabilities.append(vulnerability)
@@ -309,17 +367,27 @@ class DependencyService:
             # Determine severity (pip-audit doesn't provide severity, so we'll use 'unknown')
             severity = 'unknown'
 
-            # Extract CVE IDs
+            # Extract CVE IDs and primary advisory ID
             cve_ids = []
+            primary_advisory_id = None
+
+            # Use the advisory_id as primary if it's a GHSA or OSV ID
+            if advisory_id and (advisory_id.startswith('GHSA-') or advisory_id.startswith('OSV-')):
+                primary_advisory_id = advisory_id
+
             if 'aliases' in vuln_info:
                 for alias in vuln_info['aliases']:
                     if alias.startswith('CVE-'):
                         cve_ids.append(alias)
+                    # If we don't have a primary advisory ID yet, check for GHSA or OSV
+                    elif not primary_advisory_id and (alias.startswith('GHSA-') or alias.startswith('OSV-')):
+                        primary_advisory_id = alias
 
             vulnerability = {
                 'package_name': package_name,
                 'vulnerable_version': package_version,
                 'cve_ids': cve_ids,
+                'primary_advisory_id': primary_advisory_id,
                 'advisory_link': advisory_link,
                 'advisory_title': advisory_id,
                 'severity': severity,

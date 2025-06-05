@@ -178,11 +178,18 @@ def format_details_as_markdown(result: dict) -> str:
                 # Key information section
                 markdown += '<div style="margin-left: 20px;">\n\n'
 
-                # Add CVE link if available
+                # Determine which ID to display (CVE or Advisory)
+                display_id_text = "ID Unknown"
+                if vuln.get('cve_id') and vuln.get('cve_id') != 'unknown':
+                    display_id_text = f"**CVE ID:** {vuln['cve_id']}"
+                elif vuln.get('primary_advisory_id'):
+                    display_id_text = f"**Advisory ID:** {vuln['primary_advisory_id']}"
+
+                # Add link if available
                 if vuln.get('cve_link'):
-                    markdown += f"**CVE ID:** [{vuln['cve_id']}]({vuln['cve_link']})\n\n"
+                    markdown += f"[{display_id_text}]({vuln['cve_link']})\n\n"
                 else:
-                    markdown += f"**CVE ID:** {cve_id}\n\n"
+                    markdown += f"{display_id_text}\n\n"
 
                 # Add version information
                 markdown += f"**Vulnerable Version Range:** {vuln.get('vulnerable_version_range', 'Unknown')}\n"
@@ -292,11 +299,18 @@ def format_results_as_markdown(result: dict) -> str:
                 # Key information section
                 markdown += '<div style="margin-left: 20px;">\n\n'
 
-                # Add CVE link if available
+                # Determine which ID to display (CVE or Advisory)
+                display_id_text = "ID Unknown"
+                if vuln.get('cve_id') and vuln.get('cve_id') != 'unknown':
+                    display_id_text = f"**CVE ID:** {vuln['cve_id']}"
+                elif vuln.get('primary_advisory_id'):
+                    display_id_text = f"**Advisory ID:** {vuln['primary_advisory_id']}"
+
+                # Add link if available
                 if vuln.get('cve_link'):
-                    markdown += f"**CVE ID:** [{vuln['cve_id']}]({vuln['cve_link']})\n\n"
+                    markdown += f"[{display_id_text}]({vuln['cve_link']})\n\n"
                 else:
-                    markdown += f"**CVE ID:** {cve_id}\n\n"
+                    markdown += f"{display_id_text}\n\n"
 
                 # Add version information
                 markdown += f"**Vulnerable Version Range:** {vuln.get('vulnerable_version_range', 'Unknown')}\n"

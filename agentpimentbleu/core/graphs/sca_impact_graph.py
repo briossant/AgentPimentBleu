@@ -739,23 +739,29 @@ def aggregate_cve_results_node(state: ScaImpactState) -> Dict[str, Any]:
         vuln_details = state['current_vulnerability_details']
         analysis_results = state['current_cve_analysis_results']
 
-        # Create a VulnerabilityDetail object
-        # Ensure cve_link is a valid URL or None
-        cve_link = vuln_details.get('advisory_link')
-        if cve_link and not (cve_link.startswith('http://') or cve_link.startswith('https://')):
-            cve_link = None
+        # Ensure cve_link is a valid URL or None from the parsed advisory_link
+        parsed_advisory_link = vuln_details.get('advisory_link')
+        cve_link_url = None
+        if parsed_advisory_link and (parsed_advisory_link.startswith('http://') or parsed_advisory_link.startswith('https://')):
+            cve_link_url = parsed_advisory_link
 
-        # Ensure all string fields have valid string values, not None
         advisory_title = vuln_details.get('advisory_title')
         evidence_snippet = analysis_results.get('evidence_snippet')
 
+        # Determine the best vulnerable_version_range
+        # Prioritize the range from the advisory, fall back to constructing from installed_version if necessary
+        vulnerable_range = vuln_details.get('advisory_vulnerable_range')
+        if not vulnerable_range:
+            vulnerable_range = f"<= {vuln_details.get('installed_version', 'unknown')}"
+
         vulnerability_detail = {
             "cve_id": vuln_details.get('cve_ids', ['unknown'])[0] if vuln_details.get('cve_ids') else "unknown",
-            "cve_link": cve_link,
+            "primary_advisory_id": vuln_details.get('primary_advisory_id'),
+            "cve_link": cve_link_url,
             "cve_description": advisory_title if advisory_title is not None else 'No description available',
             "package_name": vuln_details.get('package_name', 'unknown'),
-            "vulnerable_version_range": f"<= {vuln_details.get('vulnerable_version', 'unknown')}",
-            "analyzed_project_version": vuln_details.get('vulnerable_version', 'unknown'),
+            "vulnerable_version_range": vulnerable_range,
+            "analyzed_project_version": vuln_details.get('installed_version', 'unknown'), # Use the parsed installed_version
             "impact_in_project_summary": analysis_results.get('impact_summary', 'No impact assessment available'),
             "evidence": [evidence_snippet if evidence_snippet is not None else 'No evidence available'],
             "danger_rating": analysis_results.get('danger_rating', 'Unknown'),

@@ -65,6 +65,9 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
                 # Extract CVE ID (use the first one if multiple are available)
                 cve_id = vuln.get('cve_ids', ['unknown'])[0] if vuln.get('cve_ids') else "unknown"
 
+                # Get primary advisory ID if available
+                primary_advisory_id = vuln.get('primary_advisory_id')
+
                 # Create a VulnerabilityDetail-compatible dictionary
                 # Ensure cve_link is a valid URL or None
                 cve_link = vuln.get('advisory_link')
@@ -73,6 +76,7 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
 
                 adapted_vuln = {
                     "cve_id": cve_id,
+                    "primary_advisory_id": primary_advisory_id,
                     "cve_link": cve_link,
                     "cve_description": vuln.get('advisory_title', 'No description available'),
                     "package_name": vuln.get('package_name', 'unknown'),
