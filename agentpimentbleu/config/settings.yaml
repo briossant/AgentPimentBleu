@@ -24,3 +24,7 @@ dependency_parsers:
 rag_settings:
   embedding_model: 'local'
   chunk_size: 1024
+  # Use ~/.cache/agentpimentbleu/models by default (for local installation)
+  # This will be overridden to /app/.cache/agentpimentbleu/models in Docker
+  # via the APB_RAG_SETTINGS__CACHE_DIR environment variable
+  cache_dir: '~/.cache/agentpimentbleu/models'

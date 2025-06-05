@@ -18,11 +18,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create cache directory for models
+RUN mkdir -p /app/.cache/agentpimentbleu/models
+
 # Copy the application code
 COPY . .
 
 # Expose port for Gradio
 EXPOSE 7860
+
+# Create volume for model cache
+VOLUME /app/.cache/agentpimentbleu/models
+
+# Set environment variable for cache directory
+ENV APB_RAG_SETTINGS__CACHE_DIR="/app/.cache/agentpimentbleu/models"
 
 # Set the command to run the Gradio app
 CMD ["python", "main.py", "ui"]

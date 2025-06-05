@@ -32,6 +32,9 @@ AgentPimentBleu is built with a modular architecture:
 - **UI**: Gradio interface for interactive use
 - **Configuration**: External YAML-based configuration with environment variable support
 
+![Agent Graph](dev_context/agent_graph.svg)
+*Agent workflow graph showing the orchestration of vulnerability scanning and analysis*
+
 ## Installation
 
 ### Prerequisites
@@ -67,8 +70,11 @@ cd AgentPimentBleu
 # Build the Docker image
 docker build -t agentpimentbleu .
 
-# Run the container
-docker run -p 7860:7860 -v ~/.config/agentpimentbleu:/root/.config/agentpimentbleu agentpimentbleu
+# Run the container with volume mounts for configuration and model cache
+docker run -p 7860:7860 \
+  -v ~/.config/agentpimentbleu:/root/.config/agentpimentbleu \
+  -v ~/.cache/agentpimentbleu:/app/.cache/agentpimentbleu \
+  agentpimentbleu
 ```
 
 ### Using Nix
@@ -124,9 +130,35 @@ Configuration is stored in `~/.config/agentpimentbleu/settings.yaml` with the fo
 
 - `llm_providers`: Configuration for LLM providers (Gemini, Ollama)
 - `dependency_parsers`: File patterns for identifying project types
-- `rag_settings`: Configuration for the RAG system
+- `rag_settings`: Configuration for the RAG system, including model cache directory
 
 Environment variables prefixed with `APB_` can override configuration values.
+
+### Model Caching
+
+AgentPimentBleu caches models (including LLaMA models used by Ollama) to improve performance and reduce download times. The cache directory is configured in the `rag_settings` section of the configuration file:
+
+```yaml
+rag_settings:
+  cache_dir: '/app/.cache/agentpimentbleu/models'  # For Docker
+  # or
+  # cache_dir: '~/.cache/agentpimentbleu/models'  # For local installation
+```
+
+When running with Docker, make sure to mount the cache directory as a volume to persist the models between container runs:
+
+```bash
+docker run -p 7860:7860 \
+  -v ~/.config/agentpimentbleu:/root/.config/agentpimentbleu \
+  -v ~/.cache/agentpimentbleu:/app/.cache/agentpimentbleu \
+  agentpimentbleu
+```
+
+You can also override the cache directory using an environment variable:
+
+```bash
+export APB_RAG_SETTINGS__CACHE_DIR="/path/to/your/cache"
+```
 
 ### Setting up Gemini API Key
 
@@ -161,8 +193,12 @@ AgentPimentBleu uses Google's Gemini API for LLM capabilities. You need to set u
 
    c. **For Docker**:
    ```bash
-   # Pass the API key as an environment variable
-   docker run -p 7860:7860 -e APB_LLM_PROVIDERS__GEMINI__API_KEY="YOUR_ACTUAL_GEMINI_API_KEY" agentpimentbleu
+   # Pass the API key as an environment variable and mount volumes for configuration and cache
+   docker run -p 7860:7860 \
+     -e APB_LLM_PROVIDERS__GEMINI__API_KEY="YOUR_ACTUAL_GEMINI_API_KEY" \
+     -v ~/.config/agentpimentbleu:/root/.config/agentpimentbleu \
+     -v ~/.cache/agentpimentbleu:/app/.cache/agentpimentbleu \
+     agentpimentbleu
    ```
 
 ## Example Projects

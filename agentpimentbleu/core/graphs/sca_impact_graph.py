@@ -1040,7 +1040,8 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
         result = graph.invoke(initial_state, {"recursion_limit": 100})
 
         # Extract the relevant parts of the final state
-        final_state = result.get("state", {})
+        # The result from langgraph.invoke() is the final state itself
+        final_state = result
         final_vulnerabilities = final_state.get("final_vulnerabilities", [])
         error_message = final_state.get("error_message")
 
@@ -1054,6 +1055,8 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
         }
 
         logger.info(f"SCA scan completed for {repo_source}")
+        print(result)
+        print(scan_result)
         return scan_result
 
     except Exception as e:

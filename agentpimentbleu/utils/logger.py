@@ -6,7 +6,32 @@ for consistent logging across the application.
 """
 
 import logging
+import inspect
 from typing import Optional
+
+
+def find_caller_function(depth=2):
+    """
+    Find the name of the function that called the logger.
+
+    Args:
+        depth (int): How far up the stack to look for the caller
+
+    Returns:
+        str: The name of the calling function
+    """
+    frame = inspect.currentframe()
+    try:
+        # Go up the call stack to find the actual caller
+        for _ in range(depth):
+            if frame.f_back is not None:
+                frame = frame.f_back
+            else:
+                break
+        return frame.f_code.co_name
+    finally:
+        # Avoid reference cycles
+        del frame
 
 
 class LoggerSingleton:
@@ -66,27 +91,32 @@ class LoggerSingleton:
     def debug(self, message: str):
         """Log a debug message."""
         if self._logger:
-            self._logger.debug(message)
+            caller = find_caller_function(depth=3)
+            self._logger.debug(f"[{caller}] {message}")
 
     def info(self, message: str):
         """Log an informational message."""
         if self._logger:
-            self._logger.info(message)
+            caller = find_caller_function(depth=3)
+            self._logger.info(f"[{caller}] {message}")
 
     def warning(self, message: str):
         """Log a warning message."""
         if self._logger:
-            self._logger.warning(message)
+            caller = find_caller_function(depth=3)
+            self._logger.warning(f"[{caller}] {message}")
 
     def error(self, message: str):
         """Log an error message."""
         if self._logger:
-            self._logger.error(message)
+            caller = find_caller_function(depth=3)
+            self._logger.error(f"[{caller}] {message}")
 
     def critical(self, message: str):
         """Log a critical message."""
         if self._logger:
-            self._logger.critical(message)
+            caller = find_caller_function(depth=3)
+            self._logger.critical(f"[{caller}] {message}")
 
 
 # Convenience function to get the logger instance

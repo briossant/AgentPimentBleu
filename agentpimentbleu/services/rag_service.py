@@ -54,7 +54,23 @@ class RAGService:
         if embedding_model == 'local':
             # Use a local embedding model
             from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-            Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+            import os
+            from pathlib import Path
+
+            # Get cache directory from settings, expand user path if needed
+            cache_dir = rag_settings.get('cache_dir', '~/.cache/agentpimentbleu/models')
+            cache_dir = os.path.expanduser(cache_dir)
+
+            # Ensure cache directory exists
+            os.makedirs(cache_dir, exist_ok=True)
+
+            logger.info(f"Using cache directory for embedding model: {cache_dir}")
+
+            # Initialize embedding model with cache directory
+            Settings.embed_model = HuggingFaceEmbedding(
+                model_name="BAAI/bge-small-en-v1.5",
+                cache_folder=cache_dir
+            )
         elif embedding_model == 'openai':
             # Use OpenAI's embedding model if API key is available
             from llama_index.embeddings.openai import OpenAIEmbedding
@@ -63,7 +79,22 @@ class RAGService:
             # Default to a local model if the specified model is not recognized
             logger.warning(f"Unrecognized embedding model: {embedding_model}. Defaulting to local model.")
             from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-            Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+            import os
+
+            # Get cache directory from settings, expand user path if needed
+            cache_dir = rag_settings.get('cache_dir', '~/.cache/agentpimentbleu/models')
+            cache_dir = os.path.expanduser(cache_dir)
+
+            # Ensure cache directory exists
+            os.makedirs(cache_dir, exist_ok=True)
+
+            logger.info(f"Using cache directory for embedding model: {cache_dir}")
+
+            # Initialize embedding model with cache directory
+            Settings.embed_model = HuggingFaceEmbedding(
+                model_name="BAAI/bge-small-en-v1.5",
+                cache_folder=cache_dir
+            )
 
     def build_index_from_project(self, project_path: str, index_storage_path: str) -> Optional[BaseIndex]:
         """
