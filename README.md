@@ -1,3 +1,16 @@
+---
+title: AgentPimentBleu
+emoji: 🌶️
+colorFrom: red
+colorTo: blue
+sdk: gradio
+sdk_version: 5.33.0
+app_file: main.py
+pinned: false
+license: gpl-3.0
+short_description: Git scan using LLMs/RAG for true vulnerability impact.
+---
+
 # AgentPimentBleu - Smart Security Scanner for Git Repositories
 
 **Hackathon:** Gradio Agents & MCP Hackathon 2025  
