@@ -296,14 +296,13 @@ def create_vulnerability_chart(vulnerabilities: List[Dict]) -> Optional[Image.Im
     # Convert to PIL Image
     return Image.open(buf)
 
-def scan_repository(repo_source: str, gemini_api_key: str = None, progress=gr.Progress()) -> Tuple[str, str, str, str, Optional[Image.Image]]:
+def scan_repository(repo_source: str, gemini_api_key: str = None) -> Tuple[str, str, str, str, Optional[Image.Image]]:
     """
     Scan a repository for vulnerabilities.
 
     Args:
         repo_source (str): URL or local path to the repository
         gemini_api_key (str, optional): Gemini API key to override the one in config
-        progress (gr.Progress, optional): Gradio progress tracker
 
     Returns:
         Tuple[str, str, str, str, Optional[Image.Image]]: 
@@ -311,7 +310,7 @@ def scan_repository(repo_source: str, gemini_api_key: str = None, progress=gr.Pr
     """
     logger.info(f"Scanning repository: {repo_source}")
 
-    progress(0, desc="Initializing scan...")
+    status_update = "Initializing scan..."
 
     try:
         # Prepare the payload
@@ -322,23 +321,22 @@ def scan_repository(repo_source: str, gemini_api_key: str = None, progress=gr.Pr
             payload["gemini_api_key"] = gemini_api_key.strip()
             logger.info("Using Gemini API key from UI")
 
-        progress(0.1, desc="Preparing to scan repository...")
+        status_update = "Sending scan request to API... This may take a moment."
 
         # Make the API request
-        progress(0.2, desc="Sending scan request to API...")
         response = requests.post(f"{API_URL}/scan/", json=payload)
 
         # Check if the request was successful
         if response.status_code == 200:
             # Parse the JSON response
-            progress(0.4, desc="Receiving scan results...")
+            status_update = "API response received, processing results..."
             result = response.json()
 
             # Format the results
-            progress(0.6, desc="Processing vulnerability data...")
+            status_update = "Parsing scan data..."
             summary_md = format_summary_as_markdown(result)
 
-            progress(0.7, desc="Generating vulnerability charts...")
+            status_update = "Generating vulnerability charts..."
             # Create vulnerability chart if vulnerabilities exist
             chart_image = None
             sca_results = result.get('sca_results', {})
@@ -346,21 +344,21 @@ def scan_repository(repo_source: str, gemini_api_key: str = None, progress=gr.Pr
             if vulnerabilities:
                 chart_image = create_vulnerability_chart(vulnerabilities)
 
-            progress(0.9, desc="Generating detailed vulnerability report...")
+            status_update = "Formatting detailed vulnerability report..."
             details_md = format_details_as_markdown(result)
 
             # Return the summary, detailed results, the raw JSON, status message, and chart
-            progress(1.0, desc="Scan completed successfully!")
-            return summary_md, details_md, json.dumps(result, indent=2), "Scan completed successfully!", chart_image
+            status_update = "Scan completed successfully!"
+            return summary_md, details_md, json.dumps(result, indent=2), status_update, chart_image
         else:
-            progress(1.0, desc="Scan failed!")
+            status_update = "Scan failed!"
             error_message = f"Error: {response.status_code} - {response.text}"
             logger.error(error_message)
             error_md = f"## Error\n\n{error_message}"
-            return error_md, error_md, "{}", f"Scan failed: {error_message}", None
+            return error_md, error_md, "{}", f"Scan failed: {response.status_code}", None
 
     except Exception as e:
-        progress(1.0, desc="Scan failed due to an error!")
+        status_update = "Scan failed due to an error!"
         error_message = f"Error scanning repository: {e}"
         logger.error(error_message)
         error_md = f"## Error\n\n{error_message}"
@@ -927,7 +925,7 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
                     """)
 
                     # Display the SVG image using gr.Image
-                    gr.Image(value="dev_context/agent_graph.svg", label="Agent Workflow Graph", show_label=True)
+                    gr.Image(value="dev_context/agent_graph.svg", label="Agent Workflow Graph", show_label=True, width=1000, height=600)
 
                     gr.Markdown("""
                     <div class="card">
@@ -969,8 +967,8 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
                         label="Example Projects"
                     )
 
-                    # Advanced settings in a collapsible section
-                    with gr.Accordion("Advanced Settings", open=False):
+                    # Settings in a collapsible section
+                    with gr.Accordion("Settings", open=True):
                         gemini_api_key = gr.Textbox(
                             label="Gemini API Key",
                             placeholder="Enter your Gemini API key (optional)",
@@ -1001,10 +999,10 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
                     # Results tabs
                     with gr.Tabs() as result_tabs:
                         with gr.Tab("Summary"):
-                            summary_md = gr.Markdown()
+                            summary_md = gr.HTML()
 
                         with gr.Tab("Vulnerability Details"):
-                            details_md = gr.Markdown()
+                            details_md = gr.HTML()
 
                         with gr.Tab("Raw JSON"):
                             results_json = gr.JSON()
@@ -1013,8 +1011,7 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
     scan_button.click(
         fn=scan_repository,
         inputs=[repo_input, gemini_api_key],
-        outputs=[summary_md, details_md, results_json, status_box, vuln_chart],
-        show_progress=True
+        outputs=[summary_md, details_md, results_json, status_box, vuln_chart]
     )
 
     # Show results container after scan completes
