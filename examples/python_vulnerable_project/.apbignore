@@ -1,0 +1,10 @@
+# Example .apbignore file for testing
+# Ignore specific files
+data/sample.yaml
+
+# Ignore directories
+static/text_files/
+
+# Ignore by pattern
+*.pyc
+README.md

@@ -6,6 +6,8 @@ This module provides a RAGService class for managing RAG operations using Llama-
 
 import os
 from typing import List, Optional, Set
+import pathspec
+from pathspec.patterns import GitWildMatchPattern
 
 from llama_index.core import (
     SimpleDirectoryReader,
@@ -21,6 +23,51 @@ from agentpimentbleu.config.config import get_settings
 from agentpimentbleu.utils.logger import get_logger
 
 logger = get_logger()
+
+# Default patterns to ignore during document loading
+DEFAULT_APBIGNORE_PATTERNS = [
+    # Version Control
+    ".git/",
+    ".hg/",
+    ".svn/",
+    # Node.js
+    "node_modules/",
+    # Python
+    "__pycache__/",
+    "*.py[cod]",
+    "*$py.class",
+    "venv/",
+    "env/",
+    ".env",
+    "pip-wheel-metadata/",
+    "develop-eggs/",
+    "eggs/",
+    ".eggs/",
+    "sdist/",
+    "var/",
+    "*.egg-info/",
+    ".installed.cfg",
+    "*.egg",
+    # Build artifacts
+    "build/",
+    "dist/",
+    # OS-specific
+    ".DS_Store",
+    "Thumbs.db",
+    # Logs & Temp
+    "*.log",
+    "temp/",
+    "tmp/",
+    # IDE / Editor
+    ".idea/",
+    ".vscode/",
+    "*.swp",
+    "*.swo",
+    # Cache files
+    ".cache/",
+    # AgentPimentBleu's own index
+    ".agentpimentbleu_index/"
+]
 
 
 class RAGService:
@@ -143,9 +190,41 @@ class RAGService:
             logger.error(f"Error building index from project: {e}")
             return None
 
+    def _get_path_spec(self, project_path: str) -> pathspec.PathSpec:
+        """
+        Loads ignore patterns from .apbignore in the project_path and combines them
+        with default ignore patterns.
+        Returns a compiled PathSpec object.
+
+        Args:
+            project_path (str): Path to the project directory
+
+        Returns:
+            pathspec.PathSpec: Compiled PathSpec object with ignore patterns
+        """
+        all_patterns = list(DEFAULT_APBIGNORE_PATTERNS)  # Start with defaults
+
+        apbignore_file_path = os.path.join(project_path, ".apbignore")
+        if os.path.isfile(apbignore_file_path):
+            logger.info(f"Found .apbignore file at: {apbignore_file_path}")
+            try:
+                with open(apbignore_file_path, 'r', encoding='utf-8') as f:
+                    user_patterns = f.read().splitlines()
+                    all_patterns.extend(user_patterns)
+                    logger.info(f"Loaded {len(user_patterns)} patterns from .apbignore.")
+            except Exception as e:
+                logger.error(f"Error reading .apbignore file at {apbignore_file_path}: {e}")
+        else:
+            logger.info(f".apbignore file not found in {project_path}. Using default ignore patterns only.")
+
+        # Use GitWildMatchPattern for .gitignore-style behavior
+        # pathspec will automatically handle comments and blank lines
+        spec = pathspec.PathSpec.from_lines(GitWildMatchPattern, all_patterns)
+        return spec
+
     def _load_documents_from_directory(self, directory_path: str, extensions: Set[str]) -> List[Document]:
         """
-        Load documents from a directory, filtering by file extensions.
+        Load documents from a directory, filtering by file extensions AND .apbignore patterns.
 
         Args:
             directory_path (str): Path to the directory
@@ -154,19 +233,70 @@ class RAGService:
         Returns:
             List[Document]: List of loaded documents
         """
+        logger.info(f"Loading documents from directory: {directory_path}, applying .apbignore rules.")
+        path_spec = self._get_path_spec(directory_path)
+
+        included_files_absolute_paths = []
+        total_files_scanned = 0
+        ignored_files_count = 0
+
+        for root, dirs, files in os.walk(directory_path, topdown=True):
+            # To make pathspec work correctly, we need paths relative to directory_path
+            # for matching, but then convert to absolute for SimpleDirectoryReader.
+
+            # Filter directories in-place to prevent os.walk from descending into them
+            # if they are matched by a directory pattern in path_spec.
+            relative_dirs = [os.path.relpath(os.path.join(root, d), directory_path) for d in dirs]
+
+            # Filter dirs based on pathspec
+            original_dirs_count = len(dirs)
+            dirs[:] = [
+                d for d, rel_d_path_with_slash in zip(dirs, [rd + os.sep for rd in relative_dirs])
+                if not path_spec.match_file(rel_d_path_with_slash)
+            ]
+            ignored_dirs_this_level = original_dirs_count - len(dirs)
+            if ignored_dirs_this_level > 0:
+                logger.debug(f"Ignored {ignored_dirs_this_level} subdirectories in {root} due to .apbignore patterns.")
+
+            for file_name in files:
+                total_files_scanned += 1
+                file_path_absolute = os.path.join(root, file_name)
+                file_path_relative_to_project = os.path.relpath(file_path_absolute, directory_path)
+
+                # Normalize path separators for cross-platform consistency with pathspec
+                file_path_relative_to_project_normalized = file_path_relative_to_project.replace(os.sep, '/')
+
+                if path_spec.match_file(file_path_relative_to_project_normalized):
+                    ignored_files_count += 1
+                    logger.debug(f"Ignoring file due to .apbignore: {file_path_relative_to_project_normalized}")
+                    continue
+
+                # Secondary filter: check file extension
+                _, ext = os.path.splitext(file_name)
+                if ext.lower() in extensions:
+                    included_files_absolute_paths.append(file_path_absolute)
+                else:
+                    logger.debug(f"Skipping file due to unmatched extension: {file_path_relative_to_project_normalized} (ext: {ext})")
+
+        logger.info(f"Total files encountered: {total_files_scanned}. Files ignored by .apbignore: {ignored_files_count}.")
+        logger.info(f"Number of files matching required extensions after .apbignore filtering: {len(included_files_absolute_paths)}.")
+
+        if not included_files_absolute_paths:
+            logger.warning(f"No files for RAG indexing found in {directory_path} after filtering.")
+            return []
+
         try:
-            # Use SimpleDirectoryReader to load documents
+            # Use SimpleDirectoryReader with the pre-filtered list of absolute file paths
             reader = SimpleDirectoryReader(
-                input_dir=directory_path,
-                recursive=True,
-                required_exts=list(extensions),
+                input_files=included_files_absolute_paths,
+                required_exts=list(extensions),  # Still useful for SimpleDirectoryReader's internal parsers
                 exclude_hidden=True
             )
-
-            return reader.load_data()
-
+            documents = reader.load_data()
+            logger.info(f"Successfully loaded {len(documents)} documents for RAG indexing.")
+            return documents
         except Exception as e:
-            logger.error(f"Error loading documents from directory: {e}")
+            logger.error(f"Error loading documents with SimpleDirectoryReader after filtering: {e}")
             return []
 
     def load_index(self, index_storage_path: str) -> Optional[BaseIndex]:

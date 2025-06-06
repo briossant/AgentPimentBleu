@@ -180,6 +180,44 @@ You can also override the cache directory using an environment variable:
 export APB_RAG_SETTINGS__CACHE_DIR="/path/to/your/cache"
 ```
 
+### Using .apbignore to Exclude Files from Analysis
+
+AgentPimentBleu supports a `.apbignore` file that allows you to specify files and directories to exclude from analysis, particularly for RAG indexing. This is useful for large repositories with many irrelevant files or directories (like `node_modules` or build artifacts).
+
+1. **Create a `.apbignore` file** in the root of your project directory:
+   ```
+   # Example .apbignore file
+   # Ignore specific files
+   app_secrets.py
+   config.dev.yaml
+
+   # Ignore directories
+   temp_uploads/
+   logs/
+
+   # Ignore by pattern
+   *.tmp
+   *.bak
+
+   # But don't ignore an important log!
+   !important_audit.log
+   ```
+
+2. **Syntax**: The `.apbignore` file follows the same syntax as `.gitignore`:
+   - Blank lines or lines starting with `#` are ignored
+   - Standard glob patterns work (`*`, `?`, `[abc]`, `[a-z]`)
+   - Patterns ending with `/` match directories
+   - Patterns starting with `!` negate a previous pattern
+
+3. **Default Ignores**: AgentPimentBleu automatically ignores common directories and files like:
+   - Version control directories (`.git/`, `.hg/`, `.svn/`)
+   - Package directories (`node_modules/`, `__pycache__/`, `venv/`)
+   - Build artifacts (`build/`, `dist/`)
+   - IDE files (`.idea/`, `.vscode/`)
+   - Logs and temporary files (`*.log`, `temp/`)
+
+Your patterns in `.apbignore` will be combined with these default patterns.
+
 ### Setting up Gemini API Key
 
 AgentPimentBleu uses Google's Gemini API for LLM capabilities. You need to set up a valid API key to use this feature:

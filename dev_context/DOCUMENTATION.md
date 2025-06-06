@@ -140,6 +140,8 @@ agentpimentbleu/
     *   Manages Llama-index.
     *   Builds vector indexes from the project's source code.
     *   Provides querying capabilities to search for specific code patterns, function calls, etc., to support impact assessment.
+    *   Supports `.apbignore` files to exclude irrelevant files and directories from indexing, following `.gitignore` syntax.
+    *   Implements default ignore patterns for common directories and files (e.g., `.git/`, `node_modules/`, `__pycache__/`, build artifacts).
 
 ### 6.5. `config/`
 *   **`settings.yaml`**: Central configuration for API keys, LLM model preferences, paths, dependency manifest filenames per language, RAG settings.
