@@ -296,19 +296,20 @@ def create_vulnerability_chart(vulnerabilities: List[Dict]) -> Optional[Image.Im
     # Convert to PIL Image
     return Image.open(buf)
 
-def scan_repository(repo_source: str, gemini_api_key: str = None) -> Tuple[str, str, str, str, Optional[Image.Image]]:
+def scan_repository(repo_source: str, gemini_api_key: Optional[str] = None, recursion_limit: Optional[int] = None) -> Tuple[str, str, str, str, Optional[Image.Image]]:
     """
     Scan a repository for vulnerabilities.
 
     Args:
         repo_source (str): URL or local path to the repository
         gemini_api_key (str, optional): Gemini API key to override the one in config
+        recursion_limit (int, optional): Max recursion limit for the graph.
 
     Returns:
         Tuple[str, str, str, str, Optional[Image.Image]]: 
             Summary, detailed results as Markdown, raw JSON, status message, and vulnerability chart
     """
-    logger.info(f"Scanning repository: {repo_source}")
+    logger.info(f"Scanning repository: {repo_source} with recursion limit: {recursion_limit}")
 
     status_update = "Initializing scan..."
 
@@ -320,6 +321,11 @@ def scan_repository(repo_source: str, gemini_api_key: str = None) -> Tuple[str, 
         if gemini_api_key and gemini_api_key.strip():
             payload["gemini_api_key"] = gemini_api_key.strip()
             logger.info("Using Gemini API key from UI")
+
+        # Add recursion limit to payload if provided
+        if recursion_limit is not None:
+            payload["recursion_limit"] = int(recursion_limit)  # Ensure it's an int
+            logger.info(f"Using recursion limit from UI: {recursion_limit}")
 
         status_update = "Sending scan request to API... This may take a moment."
 
@@ -969,10 +975,20 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
                     # Settings in a collapsible section
                     with gr.Accordion("Settings", open=True):
                         gemini_api_key = gr.Textbox(
-                            label="Gemini API Key",
-                            placeholder="Enter your Gemini API key",
+                            label=https://github.com/sitegui/nodejs-websocket"Gemini API Key (Optional)",
+                            placeholder="Enter your Gemini API key if you want to override settings",
                             lines=1,
                             type="password"
+                        )
+
+                        # Add slider for recursion limit
+                        recursion_limit_slider = gr.Slider(
+                            minimum=50,
+                            maximum=500,
+                            step=10,
+                            value=100,  # Default value for the slider
+                            label="Max Graph Recursion Limit",
+                            info="Adjusts the maximum number of steps the analysis graph can take. Higher values might allow deeper analysis for complex projects but can take longer."
                         )
 
                         gr.Markdown("""
@@ -1009,7 +1025,7 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
     # Handle scan button click
     scan_button.click(
         fn=scan_repository,
-        inputs=[repo_input, gemini_api_key],
+        inputs=[repo_input, gemini_api_key, recursion_limit_slider],
         outputs=[summary_md, details_md, results_json, status_box, vuln_chart]
     )
 

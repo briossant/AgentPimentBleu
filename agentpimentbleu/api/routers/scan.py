@@ -7,7 +7,7 @@ This module defines the API endpoints for initiating scans.
 import uuid
 from fastapi import APIRouter, HTTPException
 
-from agentpimentbleu.api.models.scan_models import ScanRequest, ScanOutput, SCAResult
+from agentpimentbleu.api.models.scan_models import ScanRequest, ScanOutput, SCAResult, VulnerabilityDetail
 from agentpimentbleu.core.graphs.sca_impact_graph import run_sca_scan
 from agentpimentbleu.config.config import get_settings
 from agentpimentbleu.utils.logger import get_logger
@@ -15,6 +15,21 @@ from agentpimentbleu.utils.logger import get_logger
 logger = get_logger()
 
 router = APIRouter()
+
+# Define severity order (most severe to least severe)
+SEVERITY_ORDER = {
+    "Critical": 0,
+    "High": 1,
+    "Medium": 2,
+    "Low": 3,
+    "Informational": 4,
+    "Unknown": 5  # Handle unknown or unassigned severity
+}
+
+def get_severity_sort_key(vulnerability_dict: dict):
+    """Helper function to get the sort key for a vulnerability."""
+    severity = vulnerability_dict.get('danger_rating', 'Unknown')
+    return SEVERITY_ORDER.get(severity, SEVERITY_ORDER["Unknown"])
 
 
 @router.post("/", response_model=ScanOutput)
@@ -51,29 +66,38 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
             modified_config._config['llm_providers']['gemini']['api_key'] = scan_request.gemini_api_key
             logger.info("Using Gemini API key from request")
             # Run the SCA scan with the modified config
-            scan_result = run_sca_scan(scan_request.repo_source, modified_config)
+            scan_result = run_sca_scan(scan_request.repo_source, modified_config, recursion_limit=scan_request.recursion_limit)
         else:
             # Run the SCA scan with the original config
-            scan_result = run_sca_scan(scan_request.repo_source, app_config)
+            scan_result = run_sca_scan(scan_request.repo_source, app_config, recursion_limit=scan_request.recursion_limit)
 
         # Check if there was an error
         if scan_result.get("error_message"):
-            logger.error(f"Scan failed: {scan_result['error_message']}")
+            logger.error(f"Scan for {scan_request.repo_source} failed or completed with errors: {scan_result['error_message']}")
+
+            # Even if it "completed" with errors, present it clearly
+            # Provide any partial SCA results if available
             return ScanOutput(
                 repo_source=scan_request.repo_source,
                 scan_id=scan_id,
                 status="failed",
-                error_message=scan_result["error_message"]
+                sca_results=SCAResult(
+                    dependency_file_found=scan_result.get("project_manifest_path"),
+                    vulnerabilities=[VulnerabilityDetail(**v) for v in scan_result.get("final_vulnerabilities", [])],
+                    issues_summary=f"Scan encountered an error. Partial results might be shown. Found {len(scan_result.get('final_vulnerabilities', []))} vulnerabilities."
+                ) if scan_result.get("final_vulnerabilities") else None,
+                error_message=scan_result["error_message"],
+                overall_summary=f"Scan for {scan_request.repo_source} encountered an error: {scan_result['error_message']}. Check details."
             )
 
         # Convert the scan result to the API model
         # First try to get the processed vulnerabilities, then fall back to the raw audit tool vulnerabilities
-        vulnerabilities = scan_result.get("vulnerabilities", [])
+        vulnerabilities_data = scan_result.get("final_vulnerabilities", [])  # Use final_vulnerabilities
 
         # If no processed vulnerabilities, use the raw audit tool vulnerabilities
-        if not vulnerabilities and scan_result.get("audit_tool_vulnerabilities"):
+        if not vulnerabilities_data and scan_result.get("audit_tool_vulnerabilities"):
             raw_vulnerabilities = scan_result.get("audit_tool_vulnerabilities", [])
-            logger.info(f"Adapting {len(raw_vulnerabilities)} raw audit tool vulnerabilities")
+            logger.info(f"Adapting {len(raw_vulnerabilities)} raw audit tool vulnerabilities as no processed ones were found.")
 
             # Adapt raw vulnerabilities to match VulnerabilityDetail model
             adapted_vulnerabilities = []
@@ -96,24 +120,32 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
                     "cve_link": cve_link,
                     "cve_description": vuln.get('advisory_title', 'No description available'),
                     "package_name": vuln.get('package_name', 'unknown'),
-                    "vulnerable_version_range": f"<= {vuln.get('vulnerable_version', 'unknown')}",
-                    "analyzed_project_version": vuln.get('vulnerable_version', 'unknown'),
-                    "impact_in_project_summary": "Vulnerability detected by audit tool, impact not analyzed",
+                    "vulnerable_version_range": vuln.get('advisory_vulnerable_range', f"<= {vuln.get('vulnerable_version', 'unknown')}"),
+                    "analyzed_project_version": vuln.get('installed_version', 'unknown'),
+                    "impact_in_project_summary": "Vulnerability detected by audit tool, impact not analyzed by LLM.",
                     "evidence": ["Detected by dependency audit tool"],
-                    "danger_rating": vuln.get('severity', 'Medium'),
+                    "danger_rating": vuln.get('severity', 'Medium').capitalize(),  # Capitalize to match SEVERITY_ORDER
                     "proposed_fix_summary": vuln.get('fix_suggestion_from_tool', 'Update to the latest version'),
                     "detailed_fix_guidance": "See package documentation for update instructions"
                 }
 
                 adapted_vulnerabilities.append(adapted_vuln)
 
-            vulnerabilities = adapted_vulnerabilities
+            vulnerabilities_data = adapted_vulnerabilities
 
-        # Create the SCA result
+        # Sort vulnerabilities by severity
+        # Ensure vulnerabilities_data is a list of dictionaries, not Pydantic models yet for sort
+        if isinstance(vulnerabilities_data, list) and all(isinstance(v, dict) for v in vulnerabilities_data):
+            vulnerabilities_data.sort(key=get_severity_sort_key)
+            logger.info(f"Sorted {len(vulnerabilities_data)} vulnerabilities by severity.")
+        else:
+            logger.warning("Vulnerabilities data is not in the expected list-of-dicts format for sorting.")
+
+        # Create the SCA result (after sorting)
         sca_result = SCAResult(
             dependency_file_found=scan_result.get("project_manifest_path"),
-            vulnerabilities=vulnerabilities,
-            issues_summary=f"Found {len(vulnerabilities)} vulnerabilities"
+            vulnerabilities=[VulnerabilityDetail(**v) for v in vulnerabilities_data],  # Convert dicts to Pydantic models
+            issues_summary=f"Found {len(vulnerabilities_data)} vulnerabilities"
         )
 
         # Create the scan output
@@ -122,12 +154,12 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
             scan_id=scan_id,
             status="completed",
             sca_results=sca_result,
-            overall_summary=f"Scan completed successfully. Found {len(vulnerabilities)} vulnerabilities."
+            overall_summary=f"Scan completed successfully. Found {len(vulnerabilities_data)} vulnerabilities."
         )
 
         logger.info(f"Scan completed for {scan_request.repo_source}")
         return scan_output
 
     except Exception as e:
-        logger.error(f"Error during scan: {e}")
+        logger.error(f"Error during scan: {e}")  # Log the error
         raise HTTPException(status_code=500, detail=f"Error during scan: {e}")

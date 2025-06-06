@@ -775,10 +775,11 @@ def aggregate_cve_results_node(state: ScaImpactState) -> Dict[str, Any]:
 
         logger.info(f"Added vulnerability detail for {vuln_details.get('package_name', 'unknown')}")
 
-        # Clear any error message to prevent it from affecting the next vulnerability
+        # Preserve any existing error message that might be critical (like API key issues)
+        # Only clear node-specific errors that have been handled
         return {
             "final_vulnerabilities": final_vulnerabilities,
-            "error_message": None
+            "error_message": state.get("error_message")  # Preserve existing error message if any
         }
 
     except Exception as e:
@@ -1013,14 +1014,18 @@ def create_sca_impact_graph() -> StateGraph:
     return graph.compile()
 
 
+# Define a default recursion limit
+DEFAULT_RECURSION_LIMIT = 200
+
 # Function to run the SCA scan
-def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
+def run_sca_scan(repo_source: str, app_config: Settings, recursion_limit: Optional[int] = None) -> Dict:
     """
     Run an SCA scan on a repository.
 
     Args:
         repo_source (str): URL or local path to the repository
         app_config (Settings): Application configuration
+        recursion_limit (Optional[int]): Max recursion limit for the graph. Defaults to DEFAULT_RECURSION_LIMIT.
 
     Returns:
         Dict: The scan results
@@ -1046,8 +1051,12 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
             "error_message": None
         }
 
-        # Invoke the graph
-        result = graph.invoke(initial_state, {"recursion_limit": 200})
+        # Use the specified recursion limit or the default
+        actual_recursion_limit = recursion_limit if recursion_limit is not None else DEFAULT_RECURSION_LIMIT
+        logger.info(f"Using graph recursion limit: {actual_recursion_limit}")
+
+        # Invoke the graph with the specified recursion limit
+        result = graph.invoke(initial_state, {"recursion_limit": actual_recursion_limit})
 
         # Extract the relevant parts of the final state
         # The result from langgraph.invoke() is the final state itself
@@ -1058,7 +1067,7 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
         # Create the result dictionary
         scan_result = {
             "repo_source": repo_source,
-            "vulnerabilities": final_vulnerabilities,
+            "final_vulnerabilities": final_vulnerabilities,  # Renamed for clarity
             "error_message": error_message,
             "project_manifest_path": final_state.get("project_manifest_path"),
             "audit_tool_vulnerabilities": final_state.get("audit_tool_vulnerabilities", [])
@@ -1068,10 +1077,11 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
         return scan_result
 
     except Exception as e:
-        error_message = f"Error running SCA scan: {e}"
-        logger.error(error_message)
+        error_message_critical = f"Critical error during SCA scan execution: {e}"
+        logger.error(error_message_critical, exc_info=True)  # Add exc_info for traceback
         return {
             "repo_source": repo_source,
-            "vulnerabilities": [],
-            "error_message": error_message
+            "final_vulnerabilities": [],  # Use consistent key name
+            "error_message": error_message_critical,
+            "audit_tool_vulnerabilities": initial_state.get("audit_tool_vulnerabilities", [])  # Return what we had
         }
