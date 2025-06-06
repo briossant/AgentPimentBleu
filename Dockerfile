@@ -34,4 +34,4 @@ VOLUME /app/.cache/agentpimentbleu/models
 ENV APB_RAG_SETTINGS__CACHE_DIR="/app/.cache/agentpimentbleu/models"
 
 # Set the command to run the Gradio app
-CMD ["python", "main.py", "ui"]
+CMD ["python", "main.py"]

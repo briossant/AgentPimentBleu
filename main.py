@@ -94,8 +94,8 @@ def main():
     elif args.command == "scan":
         run_scan(args.repo_source)
     else:
-        parser.print_help()
-        sys.exit(1)
+        # Default to UI when no command is provided
+        run_ui()
 
 
 if __name__ == "__main__":

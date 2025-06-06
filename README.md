@@ -9,6 +9,7 @@ app_file: main.py
 pinned: false
 license: gpl-3.0
 short_description: Git scan using LLMs/RAG for true vulnerability impact.
+tags: [agent-demo-track]
 ---
 
 # AgentPimentBleu - Smart Security Scanner for Git Repositories
@@ -101,7 +102,7 @@ cd AgentPimentBleu
 nix develop
 
 # Run the application
-python main.py ui
+python main.py
 ```
 
 ## Usage
@@ -109,6 +110,12 @@ python main.py ui
 AgentPimentBleu can be used in three ways:
 
 ### 1. Gradio UI
+
+```bash
+python main.py
+```
+
+You can also explicitly specify the UI mode:
 
 ```bash
 python main.py ui
@@ -183,7 +190,12 @@ AgentPimentBleu uses Google's Gemini API for LLM capabilities. You need to set u
 
 2. **Configure the API Key** (choose one method):
 
-   a. **Using the configuration file**:
+   a. **Using the UI input box**:
+   - When using the Gradio UI, you can enter your Gemini API key directly in the "Gemini API Key (Optional)" input box
+   - This will override the API key in the configuration file for the current scan
+   - This is useful for testing or when you don't want to modify the configuration file
+
+   b. **Using the configuration file**:
    ```bash
    # Edit your configuration file
    nano ~/.config/agentpimentbleu/settings.yaml
@@ -195,7 +207,7 @@ AgentPimentBleu uses Google's Gemini API for LLM capabilities. You need to set u
        model: 'gemini-2.0-flash'
    ```
 
-   b. **Using environment variables**:
+   c. **Using environment variables**:
    ```bash
    # Set the environment variable
    export APB_LLM_PROVIDERS__GEMINI__API_KEY="YOUR_ACTUAL_GEMINI_API_KEY"
@@ -204,7 +216,7 @@ AgentPimentBleu uses Google's Gemini API for LLM capabilities. You need to set u
    echo 'export APB_LLM_PROVIDERS__GEMINI__API_KEY="YOUR_ACTUAL_GEMINI_API_KEY"' >> ~/.bashrc
    ```
 
-   c. **For Docker**:
+   d. **For Docker**:
    ```bash
    # Pass the API key as an environment variable and mount volumes for configuration and cache
    docker run -p 7860:7860 \

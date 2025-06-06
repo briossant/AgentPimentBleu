@@ -37,8 +37,24 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
         # Get the application configuration
         app_config = get_settings()
 
-        # Run the SCA scan
-        scan_result = run_sca_scan(scan_request.repo_source, app_config)
+        # Check if a Gemini API key is provided in the request
+        if scan_request.gemini_api_key:
+            # Create a copy of the app_config to avoid modifying the global config
+            # and update the Gemini API key
+            from copy import deepcopy
+            modified_config = deepcopy(app_config)
+            # Update the Gemini API key in the config
+            if 'llm_providers' not in modified_config._config:
+                modified_config._config['llm_providers'] = {}
+            if 'gemini' not in modified_config._config['llm_providers']:
+                modified_config._config['llm_providers']['gemini'] = {}
+            modified_config._config['llm_providers']['gemini']['api_key'] = scan_request.gemini_api_key
+            logger.info("Using Gemini API key from request")
+            # Run the SCA scan with the modified config
+            scan_result = run_sca_scan(scan_request.repo_source, modified_config)
+        else:
+            # Run the SCA scan with the original config
+            scan_result = run_sca_scan(scan_request.repo_source, app_config)
 
         # Check if there was an error
         if scan_result.get("error_message"):

@@ -18,12 +18,13 @@ logger = get_logger()
 API_URL = os.environ.get("APB_API_URL", "http://127.0.0.1:8000")
 
 
-def scan_repository(repo_source: str, progress=gr.Progress()) -> Tuple[str, str, str, str]:
+def scan_repository(repo_source: str, gemini_api_key: str = None, progress=gr.Progress()) -> Tuple[str, str, str, str]:
     """
     Scan a repository for vulnerabilities.
 
     Args:
         repo_source (str): URL or local path to the repository
+        gemini_api_key (str, optional): Gemini API key to override the one in config
         progress (gr.Progress, optional): Gradio progress tracker
 
     Returns:
@@ -36,6 +37,11 @@ def scan_repository(repo_source: str, progress=gr.Progress()) -> Tuple[str, str,
     try:
         # Prepare the payload
         payload = {"repo_source": repo_source}
+
+        # Add Gemini API key to payload if provided
+        if gemini_api_key and gemini_api_key.strip():
+            payload["gemini_api_key"] = gemini_api_key.strip()
+            logger.info("Using Gemini API key from UI")
 
         progress(0.1, desc="Preparing to scan repository...")
 
@@ -385,54 +391,126 @@ def get_danger_rating_color(rating: str) -> str:
 # Create the Gradio interface
 with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css="details summary h4 { display: inline; }") as app:
     gr.Markdown("# AgentPimentBleu - Smart Security Scanner for Git Repositories")
-    gr.Markdown("""
-    Enter a Git repository URL or a local path to an example project to scan for vulnerabilities.
-
-    Example inputs:
-    - `https://github.com/username/repository`
-    - `examples/python_example_vulnerable_project_1`
-    - `examples/javascript_example_vulnerable_project_1`
-    """)
-
-    gr.Markdown("""
-    ### Supported Languages and Package Managers
-    - **Python**: requirements.txt (pip), Pipfile (pipenv), pyproject.toml (poetry, pdm)
-    - **JavaScript**: package.json (npm, yarn)
-    """)
-
-    with gr.Row():
-        repo_input = gr.Textbox(
-            label="Repository URL or Local Path",
-            placeholder="Enter repository URL or local path",
-            lines=1
-        )
-        scan_button = gr.Button("Scan Repository", variant="primary")
-
-    # Status box to show current progress
-    status_box = gr.Textbox(
-        label="Status",
-        placeholder="Ready to scan...",
-        interactive=False
-    )
 
     # Create tabs for different views of the results
     with gr.Tabs() as tabs:
-        with gr.Tab("Summary & SCA"):
-            summary_md = gr.Markdown(label="Summary")
+        with gr.Tab("About"):
+            gr.Markdown("""
+# AgentPimentBleu - Smart Security Scanner for Git Repositories
 
-        with gr.Tab("Vulnerability Details"):
-            details_md = gr.Markdown(label="Details")
+## Overview
 
-        with gr.Tab("Raw JSON Output"):
-            results_json = gr.JSON(label="Raw JSON")
+AgentPimentBleu is an AI-powered agent designed to intelligently scan Git repositories for security vulnerabilities. Unlike traditional scanners that often overwhelm users with numerous low-impact findings, AgentPimentBleu focuses on:
+
+1. Detecting vulnerable dependencies and assessing their actual impact within the specific project's context
+2. Filtering out noise from irrelevant CVEs
+3. Providing actionable, prioritized security insights
+
+The goal is to enable developers to focus on what truly matters for their security posture.
+
+## Key Features
+
+- **Intelligent Vulnerability Assessment**: Uses LLMs to understand CVE descriptions and determine real-world impact
+- **Context-Aware Analysis**: Leverages RAG (Retrieval Augmented Generation) to search the codebase for actual usage of vulnerable components
+- **Multiple Interfaces**: Offers both a user-friendly GUI (Gradio) and an API for CI/CD integration
+- **Comprehensive Reporting**: Provides detailed vulnerability reports with impact summaries and fix recommendations
+- **Multi-Language Support**: Currently supports Python (requirements.txt, Pipfile, pyproject.toml) and JavaScript (package.json) projects
+
+## Architecture
+
+AgentPimentBleu is built with a modular architecture:
+
+- **Core**: LangGraph-based agent orchestration for vulnerability analysis
+- **Services**: Business logic for Git operations, dependency analysis, LLM interactions, and RAG
+- **API**: FastAPI endpoints for programmatic interaction
+- **UI**: Gradio interface for interactive use
+
+### Agent Workflow Graph
+            """)
+
+            # Display the SVG image using gr.Image
+            gr.Image(value="dev_context/agent_graph.svg", label="Agent Workflow Graph", show_label=False)
+
+            gr.Markdown("""
+*Agent workflow graph showing the orchestration of vulnerability scanning and analysis*
+
+## Supported Languages and Package Managers
+- **Python**: requirements.txt (pip), Pipfile (pipenv), pyproject.toml (poetry, pdm)
+- **JavaScript**: package.json (npm, yarn)
+
+## Example Projects
+
+The repository includes example vulnerable projects for testing:
+
+- `examples/python_example_vulnerable_project_1`: Python project with Werkzeug vulnerability
+- `examples/javascript_example_vulnerable_project_1`: JavaScript project with lodash vulnerability
+            """)
+
+        with gr.Tab("Demo"):
+            gr.Markdown("""
+            Enter a Git repository URL or a local path to an example project to scan for vulnerabilities.
+
+            Example inputs:
+            - `https://github.com/username/repository`
+            - `examples/python_example_vulnerable_project_1`
+            - `examples/javascript_example_vulnerable_project_1`
+            """)
+
+            gr.Markdown("""
+            ### Supported Languages and Package Managers
+            - **Python**: requirements.txt (pip), Pipfile (pipenv), pyproject.toml (poetry, pdm)
+            - **JavaScript**: package.json (npm, yarn)
+            """)
+
+            with gr.Row():
+                repo_input = gr.Textbox(
+                    label="Repository URL or Local Path",
+                    placeholder="Enter repository URL or local path",
+                    lines=1
+                )
+                scan_button = gr.Button("Scan Repository", variant="primary")
+
+            with gr.Row():
+                gemini_api_key = gr.Textbox(
+                    label="Gemini API Key",
+                    placeholder="Enter your Gemini API key",
+                    lines=1,
+                    type="password"
+                )
+
+            # Status box to show current progress
+            status_box = gr.Textbox(
+                label="Status",
+                placeholder="Ready to scan...",
+                interactive=False
+            )
+
+            # Results tabs
+            with gr.Tabs() as result_tabs:
+                with gr.Tab("Summary & SCA"):
+                    summary_md = gr.Markdown(label="Summary")
+
+                with gr.Tab("Vulnerability Details"):
+                    details_md = gr.Markdown(label="Details")
+
+                with gr.Tab("Raw JSON Output"):
+                    results_json = gr.JSON(label="Raw JSON")
 
     scan_button.click(
         fn=scan_repository,
-        inputs=repo_input,
+        inputs=[repo_input, gemini_api_key],
         outputs=[summary_md, details_md, results_json, status_box],
         show_progress=True
     )
 
+    # Ensure the Demo tab is selected when scan button is clicked
+    scan_button.click(
+        fn=lambda: 0,  # No-op function
+        inputs=None,
+        outputs=None,
+        js="() => {document.querySelector('button[id^=\"tabitem\"][aria-controls=\"tabpanel\"][value=\"Demo\"]').click(); return []}"
+    )
+
 
 if __name__ == "__main__":
-    app.launch(server_name="0.0.0.0")
+    app.launch(server_name="0.0.0.0", allowed_paths=["/"])

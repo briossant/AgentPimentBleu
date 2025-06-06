@@ -13,6 +13,7 @@ class ScanRequest(BaseModel):
     Request model for initiating a scan.
     """
     repo_source: str  # URL or local path to the repository
+    gemini_api_key: Optional[str] = None  # Optional Gemini API key to override the one in config
 
 
 class VulnerabilityDetail(BaseModel):
