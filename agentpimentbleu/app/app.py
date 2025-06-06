@@ -975,7 +975,7 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
                     # Settings in a collapsible section
                     with gr.Accordion("Settings", open=True):
                         gemini_api_key = gr.Textbox(
-                            label=https://github.com/sitegui/nodejs-websocket"Gemini API Key (Optional)",
+                            label="Gemini API Key (Optional)",
                             placeholder="Enter your Gemini API key if you want to override settings",
                             lines=1,
                             type="password"
