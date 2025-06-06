@@ -7,4 +7,6 @@ static/text_files/
 
 # Ignore by pattern
 *.pyc
+
+# ignore README to not reveal the vuln to the agent
 README.md

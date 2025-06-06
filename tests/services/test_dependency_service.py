@@ -122,45 +122,39 @@ class TestDependencyService(unittest.TestCase):
 
     @patch('subprocess.run')
     def test_run_pip_audit_mocked(self, mock_run):
-        """Test running pip-audit with mocked subprocess."""
+        """Test running pip-audit with mocked subprocess using the correct JSON structure."""
         # Set up the mock subprocess.run to return a sample pip-audit output
         mock_process = MagicMock()
         mock_process.returncode = 1  # pip-audit returns non-zero if vulnerabilities found
+        # THIS IS THE CORRECTED MOCK JSON STRUCTURE
         mock_process.stdout = json.dumps({
-            "vulnerabilities": [
+            "dependencies": [
                 {
-                    "package": {
-                        "name": "werkzeug",
-                        "version": "0.10.0"
-                    },
-                    "vulnerability": {
-                        "id": "PYSEC-2019-123",
-                        "link": "https://osv.dev/vulnerability/PYSEC-2019-123",
-                        "aliases": ["CVE-2016-10149"],
-                        "description": "The debugger in Werkzeug before 0.11.0 allows remote code execution.",
-                        "affected": [
-                            {
-                                "package": {
-                                    "name": "werkzeug",
-                                    "ecosystem": "PyPI"
-                                },
-                                "ranges": [
-                                    {
-                                        "type": "SEMVER",
-                                        "events": [
-                                            {"introduced": "0"},
-                                            {"fixed": "0.11.0"}
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    "fix": {
-                        "versions": ["0.11.0"]
-                    }
+                    "name": "werkzeug",
+                    "version": "0.16.1",
+                    "vulns": [
+                        {
+                            "id": "PYSEC-2022-203",  # This is the advisory_id
+                            "fix_versions": ["2.1.1"],
+                            "aliases": ["CVE-2022-29361"],  # CVEs are here
+                            "description": "A Werkzeug vulnerability description."
+                        }
+                    ]
+                },
+                {
+                    "name": "pyyaml",
+                    "version": "5.1",
+                    "vulns": [
+                        {
+                            "id": "PYSEC-2020-176",
+                            "fix_versions": ["5.2b1"],
+                            "aliases": ["CVE-2019-20477", "GHSA-3pqx-4fqf-j49f"],
+                            "description": "PyYAML 5.1 insufficient restrictions."
+                        }
+                    ]
                 }
-            ]
+            ],
+            "fixes": []
         })
         mock_run.return_value = mock_process
 
@@ -168,16 +162,28 @@ class TestDependencyService(unittest.TestCase):
         result = self.dependency_service._run_pip_audit('/path/to/requirements.txt')
 
         # Assert the result
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]['package_name'], 'werkzeug')
-        self.assertEqual(result[0]['vulnerable_version'], '0.10.0')
-        self.assertEqual(result[0]['installed_version'], '0.10.0')
-        self.assertEqual(result[0]['cve_ids'], ['CVE-2016-10149'])
-        self.assertEqual(result[0]['primary_advisory_id'], 'PYSEC-2019-123')
-        self.assertEqual(result[0]['advisory_link'], 'https://osv.dev/vulnerability/PYSEC-2019-123')
-        self.assertEqual(result[0]['advisory_title'], 'PYSEC-2019-123')
-        self.assertEqual(result[0]['advisory_vulnerable_range'], '<0.11.0')
-        self.assertEqual(result[0]['fix_suggestion_from_tool'], 'Update to one of these versions: 0.11.0')
+        self.assertEqual(len(result), 2)  # Expecting 2 vulnerabilities now
+
+        # Check Werkzeug
+        werkzeug_vuln = next(v for v in result if v['package_name'] == 'werkzeug')
+        self.assertEqual(werkzeug_vuln['package_name'], 'werkzeug')
+        self.assertEqual(werkzeug_vuln['vulnerable_version'], '0.16.1')
+        self.assertEqual(werkzeug_vuln['installed_version'], '0.16.1')
+        self.assertIn('CVE-2022-29361', werkzeug_vuln['cve_ids'])
+        self.assertEqual(werkzeug_vuln['primary_advisory_id'], 'PYSEC-2022-203')  # Or GHSA if preferred
+        self.assertEqual(werkzeug_vuln['advisory_link'], 'https://osv.dev/vulnerability/PYSEC-2022-203')
+        self.assertEqual(werkzeug_vuln['advisory_title'], 'PYSEC-2022-203 in werkzeug')
+        self.assertEqual(werkzeug_vuln['fix_suggestion_from_tool'], 'Update to one of these versions: 2.1.1')
+
+        # Check PyYAML
+        pyyaml_vuln = next(v for v in result if v['package_name'] == 'pyyaml')
+        self.assertEqual(pyyaml_vuln['package_name'], 'pyyaml')
+        self.assertEqual(pyyaml_vuln['vulnerable_version'], '5.1')
+        self.assertIn('CVE-2019-20477', pyyaml_vuln['cve_ids'])
+        # Prioritize GHSA from aliases if present
+        self.assertEqual(pyyaml_vuln['primary_advisory_id'], 'GHSA-3pqx-4fqf-j49f')
+        self.assertEqual(pyyaml_vuln['advisory_link'], 'https://osv.dev/vulnerability/GHSA-3pqx-4fqf-j49f')
+        self.assertEqual(pyyaml_vuln['advisory_title'], 'GHSA-3pqx-4fqf-j49f in pyyaml')
 
         # Assert the mock was called
         mock_run.assert_called_once()

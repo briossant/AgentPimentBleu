@@ -337,6 +337,8 @@ class DependencyService:
     def _parse_pip_audit_results(self, audit_data: Dict) -> List[Dict]:
         """
         Parse pip-audit results into a standardized format.
+        The JSON output from `pip-audit -f json` has a top-level "dependencies" key.
+        Each dependency object has "name", "version", and a "vulns" list.
 
         Args:
             audit_data (Dict): pip-audit output as a dictionary
@@ -344,84 +346,65 @@ class DependencyService:
         Returns:
             List[Dict]: List of vulnerabilities in a standardized format
         """
-        vulnerabilities = []
+        vulnerabilities_found = []  # Renamed to avoid confusion with the 'vulnerabilities' list in the input
 
-        # pip-audit format
-        for vuln in audit_data.get('vulnerabilities', []):
-            # Extract package info
-            package_info = vuln.get('package', {})
-            package_name = package_info.get('name', 'unknown')
-            package_version = package_info.get('version', 'unknown')
+        # The actual JSON from `pip-audit -f json` has a "dependencies" list
+        for dep_info in audit_data.get('dependencies', []):
+            package_name = dep_info.get('name', 'unknown')
+            package_version = dep_info.get('version', 'unknown')
 
-            # Extract vulnerability info
-            vuln_info = vuln.get('vulnerability', {})
-            advisory_id = vuln_info.get('id', 'unknown')
-            advisory_link = vuln_info.get('link', None)
-            description = vuln_info.get('description', None)
+            for vuln_detail in dep_info.get('vulns', []):
+                advisory_id = vuln_detail.get('id', 'unknown')
+                description = vuln_detail.get('description', None)
 
-            # Extract fix info
-            fix_info = vuln.get('fix', {})
-            fix_version = fix_info.get('versions', [])
-            fix_suggestion = f"Update to one of these versions: {', '.join(fix_version)}" if fix_version else "No fix available"
+                # Fix versions are directly in vuln_detail
+                fix_versions_list = vuln_detail.get('fix_versions', [])
+                fix_suggestion = f"Update to one of these versions: {', '.join(fix_versions_list)}" if fix_versions_list else "No fix available"
 
-            # Determine severity (pip-audit doesn't provide severity, so we'll use 'unknown')
-            severity = 'unknown'
-
-            # Extract CVE IDs and primary advisory ID
-            cve_ids = []
-            primary_advisory_id = None
-
-            # Use the advisory_id as primary if it's a GHSA or OSV ID
-            if advisory_id and (advisory_id.startswith('GHSA-') or advisory_id.startswith('OSV-') or advisory_id.startswith('PYSEC-')):
-                primary_advisory_id = advisory_id
-
-            if 'aliases' in vuln_info:
-                for alias in vuln_info['aliases']:
+                # Extract CVE IDs and primary advisory ID from 'aliases'
+                cve_ids = []
+                primary_advisory_id_from_aliases = None  # To hold potential GHSA from aliases
+                aliases = vuln_detail.get('aliases', [])
+                for alias in aliases:
                     if alias.startswith('CVE-'):
                         cve_ids.append(alias)
-                    # If we don't have a primary advisory ID yet, check for GHSA or OSV
-                    elif not primary_advisory_id and (alias.startswith('GHSA-') or alias.startswith('OSV-')):
-                        primary_advisory_id = alias
+                    elif not primary_advisory_id_from_aliases and (alias.startswith('GHSA-') or alias.startswith('OSV-')):
+                        primary_advisory_id_from_aliases = alias
 
-            # Parse affected version ranges from the 'affected' array
-            affected_ranges = []
-            if 'affected' in vuln_info and isinstance(vuln_info['affected'], list):
-                for aff_item in vuln_info['affected']:
-                    if 'ranges' in aff_item and isinstance(aff_item['ranges'], list):
-                        for r_item in aff_item['ranges']:
-                            if r_item.get('type') == 'SEMVER' and isinstance(r_item.get('events'), list):
-                                # Construct a human-readable range, e.g., "<0.11.0" or ">=1.0.0, <1.2.3"
-                                events = r_item['events']
-                                range_parts = []
-                                for e in events:
-                                    if "introduced" in e and e["introduced"] != "0":  # often 0 is not useful
-                                        range_parts.append(f">={e['introduced']}")
-                                    if "fixed" in e:
-                                        range_parts.append(f"<{e['fixed']}")
-                                    if "last_affected" in e:
-                                        range_parts.append(f"<={e['last_affected']}")
-                                if range_parts:
-                                    affected_ranges.append(", ".join(sorted(list(set(range_parts)))))  # sort for consistency
+                # The 'id' from vuln_detail is usually the primary advisory ID (e.g., PYSEC-xxxx-xxx)
+                # If 'id' is a PYSEC and we found a GHSA in aliases, GHSA might be more universal.
+                # Prioritize GHSA/OSV from aliases if available, otherwise use the main 'id'.
+                primary_advisory_id = primary_advisory_id_from_aliases if primary_advisory_id_from_aliases else advisory_id
 
-            advisory_vulnerable_range = "; ".join(affected_ranges) if affected_ranges else None
+                # advisory_link can be constructed or looked up if not directly provided.
+                # For PYSEC/GHSA, a common pattern is osv.dev/vulnerability/<ID>
+                advisory_link_base = "https://osv.dev/vulnerability/"
+                advisory_link = f"{advisory_link_base}{primary_advisory_id}"  # Construct a link
 
-            vulnerability = {
-                'package_name': package_name,
-                'vulnerable_version': package_version,
-                'installed_version': package_version,  # For 'analyzed_project_version'
-                'cve_ids': cve_ids,
-                'primary_advisory_id': primary_advisory_id,
-                'advisory_link': advisory_link,
-                'advisory_title': advisory_id,
-                'severity': severity,
-                'fix_suggestion_from_tool': fix_suggestion,
-                'advisory_vulnerable_range': advisory_vulnerable_range  # Add the parsed vulnerable range
-            }
+                # Severity is not directly provided by pip-audit JSON output. Set to 'unknown' or derive if possible.
+                severity = 'unknown'  # pip-audit JSON doesn't include severity per vulnerability
 
-            vulnerabilities.append(vulnerability)
+                # advisory_vulnerable_range is not directly in this JSON structure from pip-audit.
+                # This was derived in the old parser from an "affected" field which is not in this newer format.
+                # We might need to infer it or mark as unknown. For now, let's set to None.
+                advisory_vulnerable_range = None 
 
-        logger.info(f"Found {len(vulnerabilities)} vulnerabilities in pip-audit")
-        return vulnerabilities
+                vulnerability_entry = {
+                    'package_name': package_name,
+                    'vulnerable_version': package_version,  # This is the installed version that is vulnerable
+                    'installed_version': package_version,   # For 'analyzed_project_version'
+                    'cve_ids': sorted(list(set(cve_ids))),  # Ensure unique and sorted
+                    'primary_advisory_id': primary_advisory_id,
+                    'advisory_link': advisory_link,
+                    'advisory_title': f"{primary_advisory_id} in {package_name}",  # Construct a title
+                    'severity': severity,
+                    'fix_suggestion_from_tool': fix_suggestion,
+                    'advisory_vulnerable_range': advisory_vulnerable_range
+                }
+                vulnerabilities_found.append(vulnerability_entry)
+
+        logger.info(f"Found {len(vulnerabilities_found)} vulnerabilities in pip-audit")
+        return vulnerabilities_found
 
     def _extract_cve_id(self, text: str) -> Optional[str]:
         """

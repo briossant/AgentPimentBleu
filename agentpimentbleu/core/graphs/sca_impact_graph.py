@@ -1047,7 +1047,7 @@ def run_sca_scan(repo_source: str, app_config: Settings) -> Dict:
         }
 
         # Invoke the graph
-        result = graph.invoke(initial_state, {"recursion_limit": 100})
+        result = graph.invoke(initial_state, {"recursion_limit": 200})
 
         # Extract the relevant parts of the final state
         # The result from langgraph.invoke() is the final state itself
