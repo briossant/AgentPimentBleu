@@ -1,0 +1,5 @@
+user:
+  name: Test User
+  role: editor
+settings:
+  feature_x_enabled: true

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Load YAML Data</title>
+</head>
+<body>
+    <h1>Load YAML Configuration</h1>
+    <form method="POST" action="/admin/load_data_from_yaml">
+        <textarea name="yaml_data" rows="10" cols="50" placeholder="Enter YAML data here..."></textarea><br>
+        <input type="submit" value="Load YAML">
+    </form>
+    {% if message %}
+        <p style="color: green;">{{ message }}</p>
+    {% endif %}
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% endif %}
+</body>
+</html>

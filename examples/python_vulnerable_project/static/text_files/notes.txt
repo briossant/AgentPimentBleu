@@ -1,0 +1,2 @@
+This is a sample text file for testing path traversal.
+It should be accessible normally but not files outside this intended scope.

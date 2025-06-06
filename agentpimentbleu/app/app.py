@@ -959,9 +959,8 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
                     # Example repository inputs
                     gr.Examples(
                         examples=[
-                            ["examples/python_example_vulnerable_project_1"],
-                            ["examples/javascript_example_vulnerable_project_1"],
-                            ["examples/js_vuln"]
+                            ["examples/javascript_vulnerable_project"],
+                            ["examples/python_vulnerable_project"],
                         ],
                         inputs=repo_input,
                         label="Example Projects"
@@ -971,7 +970,7 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
                     with gr.Accordion("Settings", open=True):
                         gemini_api_key = gr.Textbox(
                             label="Gemini API Key",
-                            placeholder="Enter your Gemini API key (optional)",
+                            placeholder="Enter your Gemini API key",
                             lines=1,
                             type="password"
                         )
