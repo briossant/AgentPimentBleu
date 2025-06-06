@@ -8,7 +8,7 @@ sdk_version: 5.33.0
 app_file: main.py
 pinned: false
 license: gpl-3.0
-short_description: Git scan using LLMs/RAG for true vulnerability impact.
+short_description: Dependencies CVE analyser for true vulnerability impact.
 tags: [agent-demo-track]
 ---
 
