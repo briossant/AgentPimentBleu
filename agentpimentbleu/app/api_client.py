@@ -17,6 +17,7 @@ logger = get_logger()
 def scan_repository_api(
     repo_source: str, 
     gemini_api_key: Optional[str] = None, 
+    mistral_api_key: Optional[str] = None,
     recursion_limit: Optional[int] = None
 ) -> Dict:
     """
@@ -25,13 +26,14 @@ def scan_repository_api(
     Args:
         repo_source (str): URL or local path to the repository
         gemini_api_key (str, optional): Gemini API key to override the one in config
+        mistral_api_key (str, optional): Mistral API key to override the one in config
         recursion_limit (int, optional): Max recursion limit for the graph.
 
     Returns:
         Dict: The API response as a dictionary, or an error dictionary if the request fails
     """
     logger.info(f"Sending scan request to API for repository: {repo_source}")
-    
+
     try:
         # Prepare the payload
         payload = {"repo_source": repo_source}
@@ -40,6 +42,11 @@ def scan_repository_api(
         if gemini_api_key and gemini_api_key.strip():
             payload["gemini_api_key"] = gemini_api_key.strip()
             logger.info("Using Gemini API key from UI")
+
+        # Add Mistral API key to payload if provided
+        if mistral_api_key and mistral_api_key.strip():
+            payload["mistral_api_key"] = mistral_api_key.strip()
+            logger.info("Using Mistral API key from UI")
 
         # Add recursion limit to payload if provided
         if recursion_limit is not None:

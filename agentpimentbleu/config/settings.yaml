@@ -8,6 +8,12 @@ llm_providers:
   ollama:
     base_url: 'http://localhost:11434'
     model: 'llama3.2:1b'
+  mistral:
+    api_key: 'YOUR_MISTRAL_API_KEY'
+    model: 'devstral-small-2505'
+
+# Default LLM provider to use when none is specified
+default_llm_provider: 'gemini'
 
 # Dependency Parsers Configuration
 dependency_parsers:

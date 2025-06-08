@@ -8,72 +8,6 @@ import gradio as gr
 from typing import Tuple, Dict, List, Optional
 from PIL import Image
 
-def create_scan_input_section():
-    """
-    Create the scan input section UI components.
-
-    Returns:
-        Tuple: Repository input, Gemini API key, recursion limit slider, scan button, and status box
-    """
-    with gr.Column(scale=1) as input_column:
-        gr.Markdown("""
-        <div class="card">
-            <h2>Scan a Repository</h2>
-            <p>Enter a Git repository URL or a local path to scan for vulnerabilities.</p>
-        </div>
-        """)
-
-        # Repository input with examples
-        repo_input = gr.Textbox(
-            label="Repository URL or Local Path",
-            placeholder="Enter repository URL or local path",
-            lines=1
-        )
-
-        # Example repository inputs
-        gr.Examples(
-            examples=[
-                ["examples/javascript_vulnerable_project"],
-                ["examples/python_vulnerable_project"],
-            ],
-            inputs=repo_input,
-            label="Example Projects"
-        )
-
-        # Settings in a collapsible section
-        with gr.Accordion("Settings", open=True):
-            gemini_api_key = gr.Textbox(
-                label="Gemini API Key (Optional)",
-                placeholder="Enter your Gemini API key if you want to override settings",
-                lines=1,
-                type="password"
-            )
-
-            # Add slider for recursion limit
-            recursion_limit_slider = gr.Slider(
-                minimum=50,
-                maximum=500,
-                step=10,
-                value=100,  # Default value for the slider
-                label="Max Graph Recursion Limit",
-                info="Adjusts the maximum number of steps the analysis graph can take. Higher values might allow deeper analysis for complex projects but can take longer."
-            )
-
-            gr.Markdown("""
-            <p><small>The API key can also be configured in settings.yaml or as an environment variable.</small></p>
-            """)
-
-        # Scan button
-        scan_button = gr.Button("🔍 Scan Repository", variant="primary", scale=1)
-
-        # Status box with improved styling
-        status_box = gr.Textbox(
-            label="Status",
-            placeholder="Ready to scan...",
-            interactive=False
-        )
-
-    return repo_input, gemini_api_key, recursion_limit_slider, scan_button, status_box
 
 def create_results_section():
     """
@@ -102,23 +36,101 @@ def create_results_section():
 
 def create_scan_tab():
     """
-    Create the Scan tab UI components.
+    Create the Scan tab UI components with a two-column layout for inputs/settings.
 
     Returns:
         Tuple: The Scan tab and all its components
     """
     with gr.Tab("Scan") as scan_tab:
-        with gr.Row():
-            # Left column for input controls
-            repo_input, gemini_api_key, recursion_limit_slider, scan_button, status_box = create_scan_input_section()
+        with gr.Row():  # Main row to hold the two columns for inputs/settings
+            # --- Left Column: Settings ---
+            with gr.Column(scale=1): # Adjust scale as needed, e.g., scale=1 for smaller left, scale=2 for larger right
+                gr.Markdown("### Settings")
+                with gr.Accordion("LLM API Keys & Analysis Parameters", open=True):
+                    with gr.Tabs():
+                        with gr.TabItem("LLM API Keys"):
+                            with gr.Column(): # Use column for vertical stacking inside the tab
+                                gr.Markdown("#### Gemini API Key")
+                                gemini_api_key_input = gr.Textbox(
+                                    label="Gemini API Key (Override)",
+                                    placeholder="Enter your Gemini API key",
+                                    lines=1,
+                                    type="password"
+                                )
+                                gr.Markdown("<small>[Get your Gemini API Key](https://aistudio.google.com/app/apikey)</small>", elem_classes="api-key-link")
 
-        # Results section
+                                gr.Markdown("#### Mistral API Key")
+                                mistral_api_key_input = gr.Textbox(
+                                    label="Mistral API Key (Override)",
+                                    placeholder="Enter your Mistral API key",
+                                    lines=1,
+                                    type="password"
+                                )
+                                gr.Markdown("<small>[Get your Mistral API Key](https://console.mistral.ai/api-keys/)</small>", elem_classes="api-key-link")
+
+                            gr.Markdown("""
+                            <br/>
+                            <p><small>API keys entered here will override those in <code>settings.yaml</code> or environment variables for this scan.</small></p>
+                            """)
+
+                        with gr.TabItem("Analysis Parameters"):
+                            recursion_limit_slider = gr.Slider(
+                                minimum=50,
+                                maximum=500,
+                                step=10,
+                                value=100,
+                                label="Max Graph Recursion Limit",
+                                info="Adjusts the maximum number of steps the analysis graph can take. Higher values might allow deeper analysis for complex projects but can take longer."
+                            )
+                            # You can add other analysis parameters here if needed
+
+            # --- Right Column: Scan Actions ---
+            with gr.Column(scale=2): # Adjust scale as needed
+                gr.Markdown(
+                    """
+                    <div class="card">
+                        <h2>Scan a Repository</h2>
+                        <p>Enter a Git repository URL or a local path to scan for vulnerabilities.</p>
+                    </div>
+                    """
+                )
+                with gr.Row(): # Row for Repository Input and Examples
+                    with gr.Column(scale=3): # Give more space to the repo input
+                        repo_input = gr.Textbox(
+                            label="Repository URL or Local Path",
+                            placeholder="Enter repository URL or local path",
+                            lines=1
+                        )
+                    with gr.Column(scale=2): # Space for examples
+                        gr.Examples(
+                            examples=[
+                                ["examples/javascript_vulnerable_project"],
+                                ["examples/python_vulnerable_project"],
+                            ],
+                            inputs=repo_input,
+                            label="Example Projects",
+                            elem_id="scan-example-projects"
+                        )
+
+                with gr.Row(): # Row for Scan Button and Status Box
+                    with gr.Column(scale=1): 
+                        scan_button = gr.Button("🔍 Scan Repository", variant="primary")
+                    with gr.Column(scale=3): 
+                        status_box = gr.Textbox(
+                            label="Status",
+                            placeholder="Ready to scan...",
+                            interactive=False,
+                            lines=1 
+                        )
+
+        # --- Bottom Section: Results (Spans full width under the columns) ---
         results_container, vuln_chart, summary_md, details_md, results_json = create_results_section()
 
     return (
         scan_tab, 
         repo_input, 
-        gemini_api_key, 
+        gemini_api_key_input, 
+        mistral_api_key_input, 
         recursion_limit_slider, 
         scan_button, 
         status_box, 

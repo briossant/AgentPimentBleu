@@ -52,19 +52,36 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
         # Get the application configuration
         app_config = get_settings()
 
-        # Check if a Gemini API key is provided in the request
-        if scan_request.gemini_api_key:
+        # Check if API keys are provided in the request
+        if scan_request.gemini_api_key or scan_request.mistral_api_key:
             # Create a copy of the app_config to avoid modifying the global config
-            # and update the Gemini API key
             from copy import deepcopy
             modified_config = deepcopy(app_config)
-            # Update the Gemini API key in the config
+
+            # Initialize llm_providers if it doesn't exist
             if 'llm_providers' not in modified_config._config:
                 modified_config._config['llm_providers'] = {}
-            if 'gemini' not in modified_config._config['llm_providers']:
-                modified_config._config['llm_providers']['gemini'] = {}
-            modified_config._config['llm_providers']['gemini']['api_key'] = scan_request.gemini_api_key
-            logger.info("Using Gemini API key from request")
+
+            # Update the Gemini API key and model in the config if provided
+            if scan_request.gemini_api_key:
+                if 'gemini' not in modified_config._config['llm_providers']:
+                    modified_config._config['llm_providers']['gemini'] = {}
+                modified_config._config['llm_providers']['gemini']['api_key'] = scan_request.gemini_api_key
+                modified_config._config['llm_providers']['gemini']['model'] = 'gemini-2.5-flash-preview-05-20'
+                # Set active LLM provider to Gemini
+                modified_config._config['active_llm_provider'] = 'gemini'
+                logger.info("Using Gemini API key from request with model gemini-2.5-flash-preview-05-20")
+
+            # Update the Mistral API key and model in the config if provided
+            if scan_request.mistral_api_key:
+                if 'mistral' not in modified_config._config['llm_providers']:
+                    modified_config._config['llm_providers']['mistral'] = {}
+                modified_config._config['llm_providers']['mistral']['api_key'] = scan_request.mistral_api_key
+                modified_config._config['llm_providers']['mistral']['model'] = 'devstral-small-2505'
+                # Set active LLM provider to Mistral
+                modified_config._config['active_llm_provider'] = 'mistral'
+                logger.info("Using Mistral API key from request with model devstral-small-2505")
+
             # Run the SCA scan with the modified config
             scan_result = run_sca_scan(scan_request.repo_source, modified_config, recursion_limit=scan_request.recursion_limit)
         else:

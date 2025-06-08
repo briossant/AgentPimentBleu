@@ -12,6 +12,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain.chains import LLMChain
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.chat_models import ChatOllama
+from langchain_mistralai import ChatMistralAI
 
 from agentpimentbleu.config.config import get_settings
 from agentpimentbleu.utils.logger import get_logger
@@ -44,11 +45,13 @@ class LLMService:
         Returns:
             BaseChatModel: Langchain chat model instance
         """
-        # If provider_name is not specified, use the default from config
+        # If provider_name is not specified, check for active_llm_provider first, then fall back to default_llm_provider
         if provider_name is None:
-            # This assumes there's a default_llm_provider in the config
-            # If not, you could default to the first provider in the config
-            provider_name = self.config.get('default_llm_provider', 'gemini')
+            # First check if there's an active_llm_provider set (typically from API key override)
+            provider_name = self.config.get('active_llm_provider')
+            if not provider_name:
+                # Fall back to default_llm_provider or 'gemini' if neither is set
+                provider_name = self.config.get('default_llm_provider', 'gemini')
 
         logger.info(f"Getting LLM for provider: {provider_name}")
 
@@ -69,6 +72,8 @@ class LLMService:
             return self._init_gemini(provider_config)
         elif provider_name == 'ollama':
             return self._init_ollama(provider_config)
+        elif provider_name == 'mistral':
+            return self._init_mistral(provider_config)
         else:
             logger.error(f"Unsupported LLM provider: {provider_name}")
             raise ValueError(f"Unsupported LLM provider: {provider_name}")
@@ -125,6 +130,39 @@ class LLMService:
         return ChatOllama(
             model=model,
             base_url=base_url,
+            temperature=0.2  # Lower temperature for more deterministic outputs
+        )
+
+    def _init_mistral(self, config: Dict[str, Any]) -> BaseChatModel:
+        """
+        Initialize a Mistral chat model.
+
+        Args:
+            config (Dict[str, Any]): Configuration for the Mistral provider
+
+        Returns:
+            BaseChatModel: Langchain chat model instance for Mistral
+        """
+        api_key = config.get('api_key')
+        model = config.get('model', 'devstral-small-2505')
+
+        if not api_key:
+            logger.error("No API key found for Mistral")
+            raise ValueError("No API key found for Mistral")
+
+        # Check if the API key is still the placeholder value
+        if api_key == 'YOUR_MISTRAL_API_KEY':
+            logger.error("Mistral API key is set to the default placeholder value. Please set a valid API key.")
+            logger.info("You can set the API key using the APB_LLM_PROVIDERS__MISTRAL__API_KEY environment variable")
+            logger.info("or by creating a configuration file at ~/.config/agentpimentbleu/settings.yaml")
+            raise ValueError("Invalid Mistral API key: Using placeholder value. Please set a valid API key.")
+
+        logger.info(f"Initializing Mistral chat model with model: {model}")
+        logger.debug(f"API key length: {len(api_key)} characters")
+
+        return ChatMistralAI(
+            model=model,
+            mistral_api_key=api_key,
             temperature=0.2  # Lower temperature for more deterministic outputs
         )
 

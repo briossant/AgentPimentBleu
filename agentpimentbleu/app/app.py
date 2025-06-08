@@ -23,13 +23,14 @@ logger = get_logger()
 
 
 
-def scan_repository(repo_source: str, gemini_api_key: Optional[str] = None, recursion_limit: Optional[int] = None) -> Tuple[str, str, Dict, str, Optional[Image.Image]]:
+def scan_repository(repo_source: str, gemini_api_key: Optional[str] = None, mistral_api_key: Optional[str] = None, recursion_limit: Optional[int] = None) -> Tuple[str, str, Dict, str, Optional[Image.Image]]:
     """
     Scan a repository for vulnerabilities.
 
     Args:
         repo_source (str): URL or local path to the repository
         gemini_api_key (str, optional): Gemini API key to override the one in config
+        mistral_api_key (str, optional): Mistral API key to override the one in config
         recursion_limit (int, optional): Max recursion limit for the graph.
 
     Returns:
@@ -37,6 +38,10 @@ def scan_repository(repo_source: str, gemini_api_key: Optional[str] = None, recu
             Summary, detailed results as Markdown, raw JSON, status message, and vulnerability chart
     """
     logger.info(f"Scanning repository: {repo_source} with recursion limit: {recursion_limit}")
+    if gemini_api_key:
+        logger.info("Gemini API key provided from UI.")
+    if mistral_api_key:
+        logger.info("Mistral API key provided from UI.")
 
     status_update = "Initializing scan..."
 
@@ -44,7 +49,7 @@ def scan_repository(repo_source: str, gemini_api_key: Optional[str] = None, recu
         status_update = "Sending scan request to API... This may take a moment."
 
         # Make the API request using the API client
-        result = scan_repository_api(repo_source, gemini_api_key, recursion_limit)
+        result = scan_repository_api(repo_source, gemini_api_key, mistral_api_key, recursion_limit)
 
         # Check if the request was successful
         if result.get('status') != 'failed':
@@ -111,7 +116,8 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
         (
             scan_tab, 
             repo_input, 
-            gemini_api_key, 
+            gemini_api_key_input, 
+            mistral_api_key_input, 
             recursion_limit_slider, 
             scan_button, 
             status_box, 
@@ -125,7 +131,7 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
     # Handle scan button click
     scan_button.click(
         fn=scan_repository,
-        inputs=[repo_input, gemini_api_key, recursion_limit_slider],
+        inputs=[repo_input, gemini_api_key_input, mistral_api_key_input, recursion_limit_slider],
         outputs=[summary_md, details_md, results_json, status_box, vuln_chart]
     )
 

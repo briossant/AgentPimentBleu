@@ -30,6 +30,8 @@
             langchain
             langchain-community
             langchain-ollama
+            langchain-google-genai
+            langchain-mistralai
             pydantic
             fastapi
             uvicorn
@@ -72,6 +74,8 @@
             pythonPackages.langchain
             pythonPackages.langchain-community
             pythonPackages.langchain-ollama
+            pythonPackages.langchain-google-genai
+            pythonPackages.langchain-mistralai
             pythonPackages.pydantic
             pythonPackages.fastapi
             pythonPackages.uvicorn

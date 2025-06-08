@@ -14,6 +14,7 @@ class ScanRequest(BaseModel):
     """
     repo_source: str  # URL or local path to the repository
     gemini_api_key: Optional[str] = None  # Optional Gemini API key to override the one in config
+    mistral_api_key: Optional[str] = None  # Optional Mistral API key to override the one in config
     recursion_limit: Optional[int] = None  # Optional recursion limit for the graph
 
 
