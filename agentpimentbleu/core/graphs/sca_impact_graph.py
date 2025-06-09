@@ -21,7 +21,7 @@ from agentpimentbleu.services.rag_service import RAGService
 from agentpimentbleu.services.llm_service import LLMService, LLMAuthenticationError, LLMConfigurationError, LLMConnectionError
 from agentpimentbleu.config.config import get_settings, Settings
 from agentpimentbleu.utils.logger import get_logger
-from agentpimentbleu.api.models.scan_models import ErrorCodeEnum, SCAResultForReport, ScanReportOutput, VulnerabilityDetail
+from agentpimentbleu.api.models.scan_models import ErrorCodeEnum, SCAResultForReport, ScanReportOutput, VulnerabilityDetail, ErrorContext
 from agentpimentbleu.api import scan_jobs as job_manager
 from agentpimentbleu.core.prompts.sca_impact_prompts import (
     CVE_ANALYSIS_PROMPT,
@@ -344,6 +344,19 @@ def analyze_cve_description_node(state: ScaImpactState) -> Dict[str, Any]:
         except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
             critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
             logger.critical(critical_msg)
+
+            # Determine the specific error code based on the exception type
+            error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+            if isinstance(llm_critical_error, LLMAuthenticationError):
+                error_code = ErrorCodeEnum.INVALID_LLM_API_KEY
+                critical_msg = f"Invalid API key for LLM provider '{active_provider}': {llm_critical_error}"
+            elif isinstance(llm_critical_error, LLMConfigurationError):
+                error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+                critical_msg = f"Configuration error for LLM provider '{active_provider}': {llm_critical_error}"
+
+            # Set the error in the job manager
+            job_manager.set_scan_error(state['scan_id'], error_code, critical_msg)
+
             # Return the critical error to halt the graph's LLM processing.
             # Keep any existing critical error if this one is somehow secondary.
             # Get existing error message and check if it's a critical LLM failure
@@ -408,11 +421,13 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
         if not state.get('current_vulnerability_details') or not state.get('current_cve_analysis_results'):
             error_message = f"Missing vulnerability details or CVE analysis results in {node_name}"
             logger.error(error_message)
+            job_manager.set_scan_error(state['scan_id'], ErrorCodeEnum.INTERNAL_SERVER_ERROR, error_message)
             return {"error_message": error_message}
 
         if not state.get('project_code_index_path'):
             error_message = f"No RAG index path provided in {node_name}"
             logger.error(error_message)
+            job_manager.set_scan_error(state['scan_id'], ErrorCodeEnum.RAG_INDEXING_FAILED, error_message)
             return {"error_message": error_message}
 
         # Get the current vulnerability details and analysis results
@@ -475,6 +490,19 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
         except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
             critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
             logger.critical(critical_msg)
+
+            # Determine the specific error code based on the exception type
+            error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+            if isinstance(llm_critical_error, LLMAuthenticationError):
+                error_code = ErrorCodeEnum.INVALID_LLM_API_KEY
+                critical_msg = f"Invalid API key for LLM provider '{active_provider}': {llm_critical_error}"
+            elif isinstance(llm_critical_error, LLMConfigurationError):
+                error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+                critical_msg = f"Configuration error for LLM provider '{active_provider}': {llm_critical_error}"
+
+            # Set the error in the job manager
+            job_manager.set_scan_error(state['scan_id'], error_code, critical_msg)
+
             # Get existing error message and check if it's a critical LLM failure
             existing_error = state.get("error_message","")
             return {
@@ -535,6 +563,19 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
         except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
             critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
             logger.critical(critical_msg)
+
+            # Determine the specific error code based on the exception type
+            error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+            if isinstance(llm_critical_error, LLMAuthenticationError):
+                error_code = ErrorCodeEnum.INVALID_LLM_API_KEY
+                critical_msg = f"Invalid API key for LLM provider '{active_provider}': {llm_critical_error}"
+            elif isinstance(llm_critical_error, LLMConfigurationError):
+                error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+                critical_msg = f"Configuration error for LLM provider '{active_provider}': {llm_critical_error}"
+
+            # Set the error in the job manager
+            job_manager.set_scan_error(state['scan_id'], error_code, critical_msg)
+
             # Get existing error message and check if it's a critical LLM failure
             existing_error = state.get("error_message","")
             return {
@@ -610,6 +651,7 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
         if not state.get('current_vulnerability_details') or not state.get('current_cve_analysis_results'):
             error_message = f"Missing vulnerability details or CVE analysis results in {node_name}"
             logger.error(error_message)
+            job_manager.set_scan_error(state['scan_id'], ErrorCodeEnum.INTERNAL_SERVER_ERROR, error_message)
             return {"error_message": error_message}
 
         # Get the current vulnerability details and analysis results
@@ -664,6 +706,19 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
         except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
             critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
             logger.critical(critical_msg)
+
+            # Determine the specific error code based on the exception type
+            error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+            if isinstance(llm_critical_error, LLMAuthenticationError):
+                error_code = ErrorCodeEnum.INVALID_LLM_API_KEY
+                critical_msg = f"Invalid API key for LLM provider '{active_provider}': {llm_critical_error}"
+            elif isinstance(llm_critical_error, LLMConfigurationError):
+                error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+                critical_msg = f"Configuration error for LLM provider '{active_provider}': {llm_critical_error}"
+
+            # Set the error in the job manager
+            job_manager.set_scan_error(state['scan_id'], error_code, critical_msg)
+
             # Get existing error message and check if it's a critical LLM failure
             existing_error = state.get("error_message","")
             return {
@@ -740,6 +795,7 @@ def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
         if not state.get('current_vulnerability_details') or not state.get('current_cve_analysis_results'):
             error_message = f"Missing vulnerability details or CVE analysis results in {node_name}"
             logger.error(error_message)
+            job_manager.set_scan_error(state['scan_id'], ErrorCodeEnum.INTERNAL_SERVER_ERROR, error_message)
             return {"error_message": error_message}
 
         # Get the current vulnerability details and analysis results
@@ -795,6 +851,19 @@ def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
         except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
             critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
             logger.critical(critical_msg)
+
+            # Determine the specific error code based on the exception type
+            error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+            if isinstance(llm_critical_error, LLMAuthenticationError):
+                error_code = ErrorCodeEnum.INVALID_LLM_API_KEY
+                critical_msg = f"Invalid API key for LLM provider '{active_provider}': {llm_critical_error}"
+            elif isinstance(llm_critical_error, LLMConfigurationError):
+                error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+                critical_msg = f"Configuration error for LLM provider '{active_provider}': {llm_critical_error}"
+
+            # Set the error in the job manager
+            job_manager.set_scan_error(state['scan_id'], error_code, critical_msg)
+
             # Get existing error message and check if it's a critical LLM failure
             existing_error = state.get("error_message","")
             return {
@@ -1316,17 +1385,39 @@ def execute_full_scan_logic(scan_id: uuid.UUID, repo_source: str, app_config_ove
             # Map graph error_message to ErrorContext
             graph_error_msg = final_graph_state["error_message"]
             error_code = ErrorCodeEnum.INTERNAL_SERVER_ERROR  # Default
-            if "LLM_PROVIDER_FAILURE" in graph_error_msg:
-                error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
-            elif "recursion limit" in graph_error_msg.lower():  # Check if it's a depth limit error
-                 error_code = ErrorCodeEnum.ANALYSIS_DEPTH_LIMIT_REACHED
-                 report_status = "COMPLETED_WITH_PARTIAL_RESULTS"
-                 overall_summary = f"Scan depth limited. {overall_summary}"
 
-            error_context_for_report = ErrorContext(error_code=error_code, error_message=graph_error_msg)
-            job_manager.set_scan_error(scan_id, error_code, graph_error_msg)  # Updates job status to FAILED
-            report_status = "FAILED_SCAN" if report_status != "COMPLETED_WITH_PARTIAL_RESULTS" else "COMPLETED_WITH_PARTIAL_RESULTS"
-            overall_summary = f"Scan failed or was limited. Error: {graph_error_msg}. {overall_summary}"
+            # Check if an error has already been set by a node
+            existing_job = job_manager.get_scan_job(scan_id)
+            if existing_job and existing_job.get("error_context"):
+                # Use the existing error context that was set by a node
+                error_context_for_report = existing_job["error_context"]
+                error_code = error_context_for_report.error_code
+                graph_error_msg = error_context_for_report.error_message
+            else:
+                # No specific error was set by a node, determine error code from message
+                if "LLM_PROVIDER_FAILURE" in graph_error_msg:
+                    if "Invalid API key" in graph_error_msg:
+                        error_code = ErrorCodeEnum.INVALID_LLM_API_KEY
+                    else:
+                        error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+                elif "recursion limit" in graph_error_msg.lower():  # Check if it's a depth limit error
+                    error_code = ErrorCodeEnum.ANALYSIS_DEPTH_LIMIT_REACHED
+                    report_status = "COMPLETED_WITH_PARTIAL_RESULTS"
+                    overall_summary = f"Scan depth limited. {overall_summary}"
+                elif "clone" in graph_error_msg.lower() or "repository" in graph_error_msg.lower():
+                    error_code = ErrorCodeEnum.REPOSITORY_PREPARATION_FAILED
+
+                # Create error context and set it in the job manager
+                error_context_for_report = ErrorContext(error_code=error_code, error_message=graph_error_msg)
+                job_manager.set_scan_error(scan_id, error_code, graph_error_msg)  # Updates job status to FAILED
+
+            # Update report status based on error type
+            if error_code == ErrorCodeEnum.ANALYSIS_DEPTH_LIMIT_REACHED:
+                report_status = "COMPLETED_WITH_PARTIAL_RESULTS"
+                overall_summary = f"Scan depth limited. {overall_summary}"
+            else:
+                report_status = "FAILED_SCAN"
+                overall_summary = f"Scan failed. Error: {graph_error_msg}. {overall_summary}"
 
         final_report_data = ScanReportOutput(
             repo_source=repo_source,

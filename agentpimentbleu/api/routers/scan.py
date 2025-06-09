@@ -123,7 +123,7 @@ async def get_scan_progress_endpoint(scan_id: uuid.UUID = FastAPIPath(..., descr
         current_step_description=job.get("current_step_description"),
         audit_vulnerabilities_found=job.get("audit_vulnerabilities_found"),
         llm_processed_vulnerabilities=job.get("llm_processed_vulnerabilities"),
-        error_context=ErrorContext(**job["error_context"]) if job.get("error_context") else None
+        error_context=job["error_context"] if job.get("error_context") else None
     )
 
 
@@ -193,7 +193,7 @@ async def get_scan_report_endpoint(scan_id: uuid.UUID = FastAPIPath(..., descrip
             scan_id=scan_id,
             status="IN_PROGRESS",
             overall_summary="Scan is currently in progress. Check /progress for status.",
-            error_context=ErrorContext(**job["error_context"]) if job.get("error_context") else None
+            error_context=job["error_context"] if job.get("error_context") else None
         )
     if isinstance(final_report_data, dict):
         return ScanReportOutput(**final_report_data)

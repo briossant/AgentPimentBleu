@@ -67,13 +67,32 @@ def new_scan_repository_flow(
 
         if progress_update.get("error_context"):
             err_ctx = progress_update["error_context"]
-            status_message += f"\nError: {err_ctx.get('error_code')} - {err_ctx.get('error_message')}"
-            yield "", "", progress_update, status_message, None  # Update status box
-            # Decide if to stop here or wait for final report
-            if progress_update.get('overall_status') == "FAILED":
-                break
+            error_code = err_ctx.get('error_code')
+            error_message = err_ctx.get('error_message')
 
-        yield "", "", progress_update, status_message, None  # Update status box only
+            # Add error prefix with warning emoji
+            status_message += f"\n⚠️ **ERROR** (`{error_code}`): {error_message}"
+
+            # Add user guidance for specific error codes
+            if error_code == "INVALID_LLM_API_KEY":
+                status_message += "\n\n**Suggestion**: Please verify your LLM API key and ensure it has the correct permissions."
+            elif error_code == "REPOSITORY_PREPARATION_FAILED":
+                status_message += "\n\n**Suggestion**: Could not access or clone the repository. Please check the URL/path and your network connection/permissions."
+            elif error_code == "ANALYSIS_DEPTH_LIMIT_REACHED":
+                status_message += "\n\n**Suggestion**: The scan reached its analysis depth limit. Results shown are partial. Consider re-running with a higher recursion limit if analyzing a very complex project."
+            elif error_code == "LLM_PROVIDER_COMMUNICATION_ERROR":
+                status_message += "\n\n**Suggestion**: There was an issue communicating with the LLM provider. Please check your internet connection and try again later."
+
+            # If the scan has failed, display the error and stop
+            if progress_update.get('overall_status') == "FAILED":
+                error_md = f"## Scan Failed\n\n**Error Code:** `{error_code}`\n\n**Details:** {error_message}"
+                yield error_md, error_md, progress_update, status_message, None
+                return  # Stop here, don't fetch the final report
+
+            yield "", "", progress_update, status_message, None  # Update status box
+
+        else:
+            yield "", "", progress_update, status_message, None  # Update status box only
 
         if progress_update.get("overall_status") in ["COMPLETED", "FAILED", "ANALYSIS_DEPTH_LIMITED"]:
             break  # Exit polling loop
@@ -88,9 +107,19 @@ def new_scan_repository_flow(
     report_result = get_scan_report_api(scan_id)
 
     if not report_result or report_result.get("error_code") or report_result.get("status") == "FAILED_SCAN":
-        error_msg = report_result.get("error_context", {}).get("error_message", "Failed to retrieve report or scan failed.")
-        logger.error(f"UI: Error fetching report or scan failed: {error_msg}")
-        error_md = f"## Scan Failed or Error Retrieving Report\n\nID: {scan_id}\nDetails: {error_msg}"
+        # Check if we have a structured error context
+        if report_result and report_result.get("error_context"):
+            error_context = report_result.get("error_context")
+            error_code = error_context.get("error_code")
+            error_msg = error_context.get("error_message")
+            logger.error(f"UI: Error fetching report: {error_code} - {error_msg}")
+            error_md = f"## Scan Failed\n\n**Error Code:** `{error_code}`\n\n**Details:** {error_msg}"
+        else:
+            # Fallback for unstructured errors
+            error_msg = report_result.get("error_message", "Failed to retrieve report or scan failed.") if report_result else "Failed to retrieve report."
+            logger.error(f"UI: Error fetching report: {error_msg}")
+            error_md = f"## Error Retrieving Report\n\n**Details:** {error_msg}"
+
         yield error_md, error_md, report_result or {}, f"Failed: {error_msg}", None
         return
 

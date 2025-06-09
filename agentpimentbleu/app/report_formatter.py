@@ -39,14 +39,69 @@ def format_summary_as_markdown(result: dict) -> str:
     markdown += "</div>\n\n"
 
     # Add error message if available in a styled error box
-    if result.get('error_message'):
+    if result.get('error_context') or result.get('error_message'):
+        error_code = None
+        error_message = None
+
+        if result.get('error_context'):
+            # Use the structured error context
+            error_context = result.get('error_context')
+            error_code = error_context.get('error_code')
+            error_message = error_context.get('error_message')
+        else:
+            # Fall back to the simple error message
+            error_message = result.get('error_message')
+
+        # Determine card style based on error code
+        card_style = f"border-left: 4px solid {COLORS['danger']}; background-color: #FEF2F2;"
+        error_title = "⚠️ Error"
+
+        # Special styling for depth limit errors
+        if error_code == "ANALYSIS_DEPTH_LIMIT_REACHED":
+            card_style = f"border-left: 4px solid {COLORS['warning']}; background-color: #FEF9C3;"
+            error_title = "⚠️ Partial Results"
+
         markdown += f"""
-<div class="card" style="border-left: 4px solid {COLORS['danger']}; background-color: #FEF2F2;">
-    <h3>⚠️ Error</h3>
-    <p>{result['error_message']}</p>
+<div class="card" style="{card_style}">
+    <h3>{error_title}</h3>
+"""
+
+        if error_code:
+            markdown += f"""
+    <p><strong>Error Code:</strong> {error_code}</p>
+    <p><strong>Details:</strong> {error_message}</p>
+"""
+        else:
+            markdown += f"""
+    <p>{error_message}</p>
+"""
+
+        # Add user guidance for specific error codes
+        if error_code:
+            if error_code == "INVALID_LLM_API_KEY":
+                markdown += f"""
+    <p><strong>Suggestion:</strong> Please verify your LLM API key and ensure it has the correct permissions.</p>
+"""
+            elif error_code == "REPOSITORY_PREPARATION_FAILED":
+                markdown += f"""
+    <p><strong>Suggestion:</strong> Could not access or clone the repository. Please check the URL/path and your network connection/permissions.</p>
+"""
+            elif error_code == "ANALYSIS_DEPTH_LIMIT_REACHED":
+                markdown += f"""
+    <p><strong>Suggestion:</strong> The scan reached its analysis depth limit. Results shown are partial. Consider re-running with a higher recursion limit if analyzing a very complex project.</p>
+"""
+            elif error_code == "LLM_PROVIDER_COMMUNICATION_ERROR":
+                markdown += f"""
+    <p><strong>Suggestion:</strong> There was an issue communicating with the LLM provider. Please check your internet connection and try again later.</p>
+"""
+
+        markdown += """
 </div>
 """
-        return markdown
+
+        # Only return immediately for fatal errors, not for partial results
+        if not error_code or error_code != "ANALYSIS_DEPTH_LIMIT_REACHED":
+            return markdown
 
     # Add SCA results if available
     sca_results = result.get('sca_results')
@@ -158,14 +213,69 @@ def format_details_as_markdown(result: dict) -> str:
 """
 
     # Add error message if available in a styled error box
-    if result.get('error_message'):
+    if result.get('error_context') or result.get('error_message'):
+        error_code = None
+        error_message = None
+
+        if result.get('error_context'):
+            # Use the structured error context
+            error_context = result.get('error_context')
+            error_code = error_context.get('error_code')
+            error_message = error_context.get('error_message')
+        else:
+            # Fall back to the simple error message
+            error_message = result.get('error_message')
+
+        # Determine card style based on error code
+        card_style = f"border-left: 4px solid {COLORS['danger']}; background-color: #FEF2F2;"
+        error_title = "⚠️ Error"
+
+        # Special styling for depth limit errors
+        if error_code == "ANALYSIS_DEPTH_LIMIT_REACHED":
+            card_style = f"border-left: 4px solid {COLORS['warning']}; background-color: #FEF9C3;"
+            error_title = "⚠️ Partial Results"
+
         markdown += f"""
-<div class="card" style="border-left: 4px solid {COLORS['danger']}; background-color: #FEF2F2;">
-    <h3>⚠️ Error</h3>
-    <p>{result['error_message']}</p>
+<div class="card" style="{card_style}">
+    <h3>{error_title}</h3>
+"""
+
+        if error_code:
+            markdown += f"""
+    <p><strong>Error Code:</strong> {error_code}</p>
+    <p><strong>Details:</strong> {error_message}</p>
+"""
+        else:
+            markdown += f"""
+    <p>{error_message}</p>
+"""
+
+        # Add user guidance for specific error codes
+        if error_code:
+            if error_code == "INVALID_LLM_API_KEY":
+                markdown += f"""
+    <p><strong>Suggestion:</strong> Please verify your LLM API key and ensure it has the correct permissions.</p>
+"""
+            elif error_code == "REPOSITORY_PREPARATION_FAILED":
+                markdown += f"""
+    <p><strong>Suggestion:</strong> Could not access or clone the repository. Please check the URL/path and your network connection/permissions.</p>
+"""
+            elif error_code == "ANALYSIS_DEPTH_LIMIT_REACHED":
+                markdown += f"""
+    <p><strong>Suggestion:</strong> The scan reached its analysis depth limit. Results shown are partial. Consider re-running with a higher recursion limit if analyzing a very complex project.</p>
+"""
+            elif error_code == "LLM_PROVIDER_COMMUNICATION_ERROR":
+                markdown += f"""
+    <p><strong>Suggestion:</strong> There was an issue communicating with the LLM provider. Please check your internet connection and try again later.</p>
+"""
+
+        markdown += """
 </div>
 """
-        return markdown
+
+        # Only return immediately for fatal errors, not for partial results
+        if not error_code or error_code != "ANALYSIS_DEPTH_LIMIT_REACHED":
+            return markdown
 
     # Add SCA results if available
     sca_results = result.get('sca_results')

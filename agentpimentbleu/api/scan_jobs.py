@@ -25,7 +25,7 @@ scan_jobs: Dict[uuid.UUID, Dict[str, Any]] = {}
 def create_scan_job(scan_id: uuid.UUID, repo_source: str):
     """
     Create a new scan job with the given ID and repository source.
-    
+
     Args:
         scan_id: The unique identifier for the scan job
         repo_source: The URL or local path to the repository
@@ -48,7 +48,7 @@ def create_scan_job(scan_id: uuid.UUID, repo_source: str):
 def update_scan_status(scan_id: uuid.UUID, status: str, description: Optional[str] = None):
     """
     Update the status of a scan job.
-    
+
     Args:
         scan_id: The unique identifier for the scan job
         status: The new status of the scan job
@@ -65,7 +65,7 @@ def update_scan_status(scan_id: uuid.UUID, status: str, description: Optional[st
 def update_with_initial_audit(scan_id: uuid.UUID, manifest_path: Optional[str], raw_vulns: List[Dict]):
     """
     Update a scan job with initial audit results.
-    
+
     Args:
         scan_id: The unique identifier for the scan job
         manifest_path: The path to the project manifest file
@@ -87,7 +87,7 @@ def update_with_initial_audit(scan_id: uuid.UUID, manifest_path: Optional[str], 
 def add_processed_vulnerability(scan_id: uuid.UUID, vuln_detail: Dict):
     """
     Add a processed vulnerability to a scan job.
-    
+
     Args:
         scan_id: The unique identifier for the scan job
         vuln_detail: Dictionary containing vulnerability details
@@ -102,7 +102,7 @@ def add_processed_vulnerability(scan_id: uuid.UUID, vuln_detail: Dict):
 def set_final_report(scan_id: uuid.UUID, report_data: Dict):
     """
     Set the final report for a scan job.
-    
+
     Args:
         scan_id: The unique identifier for the scan job
         report_data: Dictionary containing the final report data
@@ -118,7 +118,7 @@ def set_final_report(scan_id: uuid.UUID, report_data: Dict):
 def set_scan_error(scan_id: uuid.UUID, error_code: ErrorCodeEnum, error_message: str):
     """
     Set an error for a scan job.
-    
+
     Args:
         scan_id: The unique identifier for the scan job
         error_code: The error code
@@ -128,6 +128,12 @@ def set_scan_error(scan_id: uuid.UUID, error_code: ErrorCodeEnum, error_message:
         logger.info(f"Setting error for scan job {scan_id}: {error_code} - {error_message}")
         scan_jobs[scan_id]["error_context"] = ErrorContext(error_code=error_code, error_message=error_message)
         scan_jobs[scan_id]["status"] = "FAILED"
+
+        # Update the current_step_description to reflect the error
+        current_step = scan_jobs[scan_id].get("current_step_description", "")
+        error_step_description = f"Error during {current_step.split('.')[0] if '.' in current_step else current_step}: {error_message}"
+        scan_jobs[scan_id]["current_step_description"] = error_step_description
+
         # Also update the final_report if it's being compiled progressively
         if scan_jobs[scan_id].get("final_report"):
             scan_jobs[scan_id]["final_report"].error_context = scan_jobs[scan_id]["error_context"]
@@ -145,10 +151,10 @@ def set_scan_error(scan_id: uuid.UUID, error_code: ErrorCodeEnum, error_message:
 def get_scan_job(scan_id: uuid.UUID) -> Optional[Dict[str, Any]]:
     """
     Get a scan job by ID.
-    
+
     Args:
         scan_id: The unique identifier for the scan job
-        
+
     Returns:
         The scan job dictionary or None if not found
     """
