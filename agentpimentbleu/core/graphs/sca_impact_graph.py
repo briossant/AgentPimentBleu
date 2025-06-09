@@ -9,6 +9,8 @@ import os
 import json
 import re
 import inspect
+import uuid
+from copy import deepcopy
 
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
@@ -19,6 +21,8 @@ from agentpimentbleu.services.rag_service import RAGService
 from agentpimentbleu.services.llm_service import LLMService, LLMAuthenticationError, LLMConfigurationError, LLMConnectionError
 from agentpimentbleu.config.config import get_settings, Settings
 from agentpimentbleu.utils.logger import get_logger
+from agentpimentbleu.api.models.scan_models import ErrorCodeEnum, SCAResultForReport, ScanReportOutput, VulnerabilityDetail
+from agentpimentbleu.api import scan_jobs as job_manager
 from agentpimentbleu.core.prompts.sca_impact_prompts import (
     CVE_ANALYSIS_PROMPT,
     RAG_QUERY_FORMULATION_PROMPT,
@@ -46,6 +50,7 @@ class ScaImpactState(TypedDict, total=False):
     """
     State for the SCA Impact Graph.
     """
+    scan_id: uuid.UUID  # Unique identifier for the scan job
     app_config: Settings  # Application configuration
     repo_source: str  # URL or local path
     cloned_repo_path: Optional[str]  # Path to the cloned repository
@@ -70,7 +75,9 @@ def prepare_scan_environment(state: ScaImpactState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updated state
     """
-    logger.info(f"Preparing scan environment for {state['repo_source']}")
+    scan_id = state['scan_id']
+    job_manager.update_scan_status(scan_id, "PREPARING_ENVIRONMENT", f"Cloning/preparing repository: {state['repo_source']}")
+    logger.info(f"[{scan_id}] Preparing scan environment for {state['repo_source']}")
 
     try:
         git_service = GitService()
@@ -78,15 +85,17 @@ def prepare_scan_environment(state: ScaImpactState) -> Dict[str, Any]:
 
         if not cloned_repo_path:
             error_message = f"Failed to prepare repository from {state['repo_source']}"
-            logger.error(error_message)
+            logger.error(f"[{scan_id}] {error_message}")
+            job_manager.set_scan_error(scan_id, ErrorCodeEnum.REPOSITORY_PREPARATION_FAILED, error_message)
             return {"cloned_repo_path": None, "error_message": error_message}
 
-        logger.info(f"Repository prepared at {cloned_repo_path}")
+        logger.info(f"[{scan_id}] Repository prepared at {cloned_repo_path}")
         return {"cloned_repo_path": cloned_repo_path, "error_message": None}
 
     except Exception as e:
         error_message = f"Error preparing scan environment: {e}"
-        logger.error(error_message)
+        logger.error(f"[{scan_id}] {error_message}")
+        job_manager.set_scan_error(scan_id, ErrorCodeEnum.REPOSITORY_PREPARATION_FAILED, error_message)
         return {"cloned_repo_path": None, "error_message": error_message}
 
 
@@ -100,12 +109,15 @@ def identify_project_and_run_audit_node(state: ScaImpactState) -> Dict[str, Any]
     Returns:
         Dict[str, Any]: Updated state
     """
-    logger.info(f"Identifying project type and running audit for {state['cloned_repo_path']}")
+    scan_id = state['scan_id']
+    job_manager.update_scan_status(scan_id, "IDENTIFYING_PROJECT", f"Identifying project type for {state['repo_source']}")
+    logger.info(f"[{scan_id}] Identifying project type and running audit for {state['cloned_repo_path']}")
 
     try:
         if not state['cloned_repo_path']:
             error_message = "No repository path provided"
-            logger.error(error_message)
+            logger.error(f"[{scan_id}] {error_message}")
+            job_manager.set_scan_error(scan_id, ErrorCodeEnum.REPOSITORY_PREPARATION_FAILED, error_message)
             return {
                 "project_type": None,
                 "project_manifest_path": None,
@@ -120,7 +132,8 @@ def identify_project_and_run_audit_node(state: ScaImpactState) -> Dict[str, Any]
 
         if not project_info:
             error_message = f"Could not identify project type for {state['cloned_repo_path']}"
-            logger.warning(error_message)
+            logger.warning(f"[{scan_id}] {error_message}")
+            job_manager.set_scan_error(scan_id, ErrorCodeEnum.UNKNOWN_PROJECT_TYPE, error_message)
             return {
                 "project_type": None,
                 "project_manifest_path": None,
@@ -129,6 +142,7 @@ def identify_project_and_run_audit_node(state: ScaImpactState) -> Dict[str, Any]
             }
 
         project_type, project_manifest_path = project_info
+        job_manager.update_scan_status(scan_id, "RUNNING_AUDIT", f"Running security audit for {project_type} project")
 
         # Run security audit
         vulnerabilities = dependency_service.run_security_audit(
@@ -137,7 +151,8 @@ def identify_project_and_run_audit_node(state: ScaImpactState) -> Dict[str, Any]
             project_manifest_path
         )
 
-        logger.info(f"Found {len(vulnerabilities)} vulnerabilities")
+        logger.info(f"[{scan_id}] Found {len(vulnerabilities)} vulnerabilities")
+        job_manager.update_with_initial_audit(scan_id, project_manifest_path, vulnerabilities)
 
         return {
             "project_type": project_type,
@@ -148,7 +163,8 @@ def identify_project_and_run_audit_node(state: ScaImpactState) -> Dict[str, Any]
 
     except Exception as e:
         error_message = f"Error identifying project and running audit: {e}"
-        logger.error(error_message)
+        logger.error(f"[{scan_id}] {error_message}")
+        job_manager.set_scan_error(scan_id, ErrorCodeEnum.VULNERABILITY_AUDIT_TOOL_FAILED, error_message)
         return {
             "project_type": None,
             "project_manifest_path": None,
@@ -167,12 +183,15 @@ def build_rag_index_node(state: ScaImpactState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updated state
     """
-    logger.info(f"Building RAG index for {state['cloned_repo_path']}")
+    scan_id = state['scan_id']
+    job_manager.update_scan_status(scan_id, "BUILDING_RAG_INDEX", f"Building RAG index for the project")
+    logger.info(f"[{scan_id}] Building RAG index for {state['cloned_repo_path']}")
 
     try:
         if not state['cloned_repo_path']:
             error_message = "No repository path provided"
-            logger.error(error_message)
+            logger.error(f"[{scan_id}] {error_message}")
+            job_manager.set_scan_error(scan_id, ErrorCodeEnum.RAG_INDEXING_FAILED, error_message)
             return {"project_code_index_path": None, "error_message": error_message}
 
         # Create a directory for the index
@@ -191,15 +210,17 @@ def build_rag_index_node(state: ScaImpactState) -> Dict[str, Any]:
 
         if not index:
             error_message = f"Failed to build RAG index for {state['cloned_repo_path']}"
-            logger.error(error_message)
+            logger.error(f"[{scan_id}] {error_message}")
+            job_manager.set_scan_error(scan_id, ErrorCodeEnum.RAG_INDEXING_FAILED, error_message)
             return {"project_code_index_path": None, "error_message": error_message}
 
-        logger.info(f"RAG index built at {index_storage_path}")
+        logger.info(f"[{scan_id}] RAG index built at {index_storage_path}")
         return {"project_code_index_path": index_storage_path, "error_message": None}
 
     except Exception as e:
         error_message = f"Error building RAG index: {e}"
-        logger.error(error_message)
+        logger.error(f"[{scan_id}] {error_message}")
+        job_manager.set_scan_error(scan_id, ErrorCodeEnum.RAG_INDEXING_FAILED, error_message)
         return {"project_code_index_path": None, "error_message": error_message}
 
 
@@ -213,21 +234,29 @@ def select_next_vulnerability_node(state: ScaImpactState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updated state
     """
-    logger.info("Selecting next vulnerability to process")
+    scan_id = state['scan_id']
+    logger.info(f"[{scan_id}] Selecting next vulnerability to process")
 
     try:
         vulnerabilities = state.get('audit_tool_vulnerabilities', [])
         current_idx = state.get('current_vulnerability_idx', -1) + 1
 
         if not vulnerabilities or current_idx >= len(vulnerabilities):
-            logger.info("No more vulnerabilities to process")
+            logger.info(f"[{scan_id}] No more vulnerabilities to process")
+            job_manager.update_scan_status(scan_id, "COMPILING_REPORT", "All vulnerabilities processed, compiling final report")
             return {
                 "current_vulnerability_idx": -1,
                 "current_vulnerability_details": None
             }
 
         current_vulnerability = vulnerabilities[current_idx]
-        logger.info(f"Selected vulnerability {current_idx + 1}/{len(vulnerabilities)}: {current_vulnerability.get('package_name', 'unknown')}")
+        logger.info(f"[{scan_id}] Selected vulnerability {current_idx + 1}/{len(vulnerabilities)}: {current_vulnerability.get('package_name', 'unknown')}")
+
+        job_manager.update_scan_status(
+            scan_id, 
+            "PROCESSING_VULNERABILITIES", 
+            f"Processing vulnerability {current_idx + 1}/{len(vulnerabilities)}: {current_vulnerability.get('package_name', 'unknown')}"
+        )
 
         return {
             "current_vulnerability_idx": current_idx,
@@ -237,7 +266,8 @@ def select_next_vulnerability_node(state: ScaImpactState) -> Dict[str, Any]:
 
     except Exception as e:
         error_message = f"Error selecting next vulnerability: {e}"
-        logger.error(error_message)
+        logger.error(f"[{scan_id}] {error_message}")
+        job_manager.set_scan_error(scan_id, ErrorCodeEnum.INTERNAL_SERVER_ERROR, error_message)
         return {
             "current_vulnerability_idx": -1,
             "current_vulnerability_details": None,
@@ -1157,7 +1187,7 @@ DEFAULT_RECURSION_LIMIT = 200
 # Function to run the SCA scan
 def run_sca_scan(repo_source: str, app_config: Settings, recursion_limit: Optional[int] = None) -> Dict:
     """
-    Run an SCA scan on a repository.
+    Run an SCA scan on a repository (legacy synchronous version).
 
     Args:
         repo_source (str): URL or local path to the repository
@@ -1167,15 +1197,90 @@ def run_sca_scan(repo_source: str, app_config: Settings, recursion_limit: Option
     Returns:
         Dict: The scan results
     """
-    logger.info(f"Running SCA scan for {repo_source}")
+    # Generate a temporary scan_id for this synchronous run
+    scan_id = uuid.uuid4()
+    logger.info(f"Running synchronous SCA scan for {repo_source} with temporary scan_id {scan_id}")
 
+    # Create a job for tracking (even though this is synchronous)
+    job_manager.create_scan_job(scan_id, repo_source)
+
+    # Execute the full scan logic
+    execute_full_scan_logic(scan_id, repo_source, None, recursion_limit)
+
+    # Get the final report from the job
+    job = job_manager.get_scan_job(scan_id)
+    if not job or not job.get("final_report"):
+        error_message = f"Failed to get final report for scan {scan_id}"
+        logger.error(error_message)
+        return {
+            "repo_source": repo_source,
+            "final_vulnerabilities": [],
+            "error_message": error_message,
+            "audit_tool_vulnerabilities": []
+        }
+
+    # Convert the new report format to the legacy format
+    final_report = job["final_report"]
+    scan_result = {
+        "repo_source": repo_source,
+        "final_vulnerabilities": [],
+        "error_message": None,
+        "project_manifest_path": None,
+        "audit_tool_vulnerabilities": []
+    }
+
+    # Extract vulnerabilities if available
+    if final_report.sca_results and final_report.sca_results.vulnerabilities:
+        scan_result["final_vulnerabilities"] = [v.model_dump() for v in final_report.sca_results.vulnerabilities]
+        scan_result["project_manifest_path"] = final_report.sca_results.dependency_file_found
+
+    # Extract error message if available
+    if final_report.error_context:
+        scan_result["error_message"] = final_report.error_context.error_message
+
+    # Extract audit tool vulnerabilities if available
+    initial_audit = job.get("initial_audit_results")
+    if initial_audit and initial_audit.audit_tool_vulnerabilities:
+        scan_result["audit_tool_vulnerabilities"] = [v.model_dump() for v in initial_audit.audit_tool_vulnerabilities]
+
+    return scan_result
+
+
+def execute_full_scan_logic(scan_id: uuid.UUID, repo_source: str, app_config_overrides: Optional[Dict] = None, recursion_limit_override: Optional[int] = None):
+    """
+    Execute the full scan logic as a background task.
+
+    Args:
+        scan_id (uuid.UUID): The unique identifier for the scan job
+        repo_source (str): URL or local path to the repository
+        app_config_overrides (Optional[Dict]): Overrides for the application configuration
+        recursion_limit_override (Optional[int]): Override for the recursion limit
+    """
+    logger.info(f"[{scan_id}] Starting full scan logic for {repo_source}")
     try:
-        # Create the graph
-        graph = create_sca_impact_graph()
+        app_config = get_settings()  # Base config
+        if app_config_overrides:
+            # Apply overrides (e.g., API keys)
+            from copy import deepcopy
+            modified_config = deepcopy(app_config)
+            # Example: Update Gemini API key if provided
+            if app_config_overrides.get('gemini_api_key'):
+                if 'llm_providers' not in modified_config._config: modified_config._config['llm_providers'] = {}
+                if 'gemini' not in modified_config._config['llm_providers']: modified_config._config['llm_providers']['gemini'] = {}
+                modified_config._config['llm_providers']['gemini']['api_key'] = app_config_overrides['gemini_api_key']
+                modified_config._config['active_llm_provider'] = 'gemini'  # Or however you manage this
+            # Similar for Mistral
+            if app_config_overrides.get('mistral_api_key'):
+                if 'llm_providers' not in modified_config._config: modified_config._config['llm_providers'] = {}
+                if 'mistral' not in modified_config._config['llm_providers']: modified_config._config['llm_providers']['mistral'] = {}
+                modified_config._config['llm_providers']['mistral']['api_key'] = app_config_overrides['mistral_api_key']
+                modified_config._config['active_llm_provider'] = 'mistral'
+            app_config = modified_config
 
-        # Initialize the state
+        graph = create_sca_impact_graph()
         initial_state: ScaImpactState = {
-            "app_config": app_config,  # Pass the potentially modified config
+            "scan_id": scan_id,  # Pass scan_id
+            "app_config": app_config,
             "repo_source": repo_source,
             "cloned_repo_path": None,
             "project_type": None,
@@ -1189,53 +1294,52 @@ def run_sca_scan(repo_source: str, app_config: Settings, recursion_limit: Option
             "error_message": None
         }
 
-        # Use the specified recursion limit or the default
-        actual_recursion_limit = recursion_limit if recursion_limit is not None else DEFAULT_RECURSION_LIMIT
-        logger.info(f"Using graph recursion limit: {actual_recursion_limit}")
+        actual_recursion_limit = recursion_limit_override if recursion_limit_override is not None else DEFAULT_RECURSION_LIMIT
+        job_manager.update_scan_status(scan_id, "PREPARING_ENVIRONMENT", f"Initializing scan with recursion limit: {actual_recursion_limit}")
 
-        # Invoke the graph with the specified recursion limit
-        result = graph.invoke(initial_state, {"recursion_limit": actual_recursion_limit})
+        final_graph_state = graph.invoke(initial_state, {"recursion_limit": actual_recursion_limit})
 
-        # Extract the relevant parts of the final state
-        # The result from langgraph.invoke() is the final state itself
-        final_state = result
-        final_vulnerabilities = final_state.get("final_vulnerabilities", [])
-        error_message = final_state.get("error_message")
+        job_manager.update_scan_status(scan_id, "COMPILING_REPORT", "Compiling final scan report.")
 
-        # Create the result dictionary
-        scan_result = {
-            "repo_source": repo_source,
-            "final_vulnerabilities": final_vulnerabilities,  # Renamed for clarity
-            "error_message": error_message,
-            "project_manifest_path": final_state.get("project_manifest_path"),
-            "audit_tool_vulnerabilities": final_state.get("audit_tool_vulnerabilities", [])
-        }
+        # Prepare final report structure
+        sca_results_for_report = SCAResultForReport(
+            dependency_file_found=final_graph_state.get("project_manifest_path"),
+            vulnerabilities=[VulnerabilityDetail(**v) for v in final_graph_state.get("final_vulnerabilities", [])],
+            issues_summary=f"Found {len(final_graph_state.get('final_vulnerabilities', []))} processed vulnerabilities."
+        )
 
-        if error_message and error_message.startswith("LLM_PROVIDER_FAILURE:"):
-            logger.critical(f"Scan for {repo_source} terminated due to critical LLM failure: {error_message}")
-            # Raise an exception to immediately stop the scan process for API key errors
-            raise Exception(error_message)
-        elif error_message:
-            logger.error(f"Scan for {repo_source} completed or failed with errors: {error_message}")
-        else:
-            logger.info(f"SCA scan completed for {repo_source}")
+        report_status = "COMPLETED_SUCCESS"
+        overall_summary = f"Scan completed. Found {len(final_graph_state.get('final_vulnerabilities', []))} vulnerabilities."
+        error_context_for_report = None
 
-        return scan_result
+        if final_graph_state.get("error_message"):
+            # Map graph error_message to ErrorContext
+            graph_error_msg = final_graph_state["error_message"]
+            error_code = ErrorCodeEnum.INTERNAL_SERVER_ERROR  # Default
+            if "LLM_PROVIDER_FAILURE" in graph_error_msg:
+                error_code = ErrorCodeEnum.LLM_PROVIDER_COMMUNICATION_ERROR
+            elif "recursion limit" in graph_error_msg.lower():  # Check if it's a depth limit error
+                 error_code = ErrorCodeEnum.ANALYSIS_DEPTH_LIMIT_REACHED
+                 report_status = "COMPLETED_WITH_PARTIAL_RESULTS"
+                 overall_summary = f"Scan depth limited. {overall_summary}"
+
+            error_context_for_report = ErrorContext(error_code=error_code, error_message=graph_error_msg)
+            job_manager.set_scan_error(scan_id, error_code, graph_error_msg)  # Updates job status to FAILED
+            report_status = "FAILED_SCAN" if report_status != "COMPLETED_WITH_PARTIAL_RESULTS" else "COMPLETED_WITH_PARTIAL_RESULTS"
+            overall_summary = f"Scan failed or was limited. Error: {graph_error_msg}. {overall_summary}"
+
+        final_report_data = ScanReportOutput(
+            repo_source=repo_source,
+            scan_id=scan_id,
+            status=report_status,
+            sca_results=sca_results_for_report,
+            overall_summary=overall_summary,
+            error_context=error_context_for_report
+        )
+        job_manager.set_final_report(scan_id, final_report_data.model_dump())
+        job_manager.update_scan_status(scan_id, "COMPLETED" if report_status == "COMPLETED_SUCCESS" else "FAILED", "Scan processing finished.")
 
     except Exception as e:
-        error_message = str(e)
-
-        # Check if this is an LLM provider failure that we raised earlier
-        if error_message.startswith("LLM_PROVIDER_FAILURE:"):
-            # Re-raise the exception to be caught by the API router
-            raise
-
-        # For other exceptions, log and return a result with the error
-        error_message_critical = f"Critical error during SCA scan execution: {e}"
-        logger.error(error_message_critical, exc_info=True)  # Add exc_info for traceback
-        return {
-            "repo_source": repo_source,
-            "final_vulnerabilities": [],  # Use consistent key name
-            "error_message": error_message_critical,
-            "audit_tool_vulnerabilities": initial_state.get("audit_tool_vulnerabilities", [])  # Return what we had
-        }
+        error_message_critical = f"Critical error during full scan execution: {str(e)}"
+        logger.error(f"[{scan_id}] {error_message_critical}", exc_info=True)
+        job_manager.set_scan_error(scan_id, ErrorCodeEnum.INTERNAL_SERVER_ERROR, error_message_critical)

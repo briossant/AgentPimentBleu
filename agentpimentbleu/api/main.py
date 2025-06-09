@@ -33,14 +33,14 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(scan.router, prefix="/scan", tags=["scan"])
+app.include_router(scan.router, prefix="/scans", tags=["Scans"])
 
 
 @app.get("/")
 async def root():
     """
     Root endpoint.
-    
+
     Returns:
         dict: A welcome message
     """
@@ -55,7 +55,7 @@ async def root():
 async def health():
     """
     Health check endpoint.
-    
+
     Returns:
         dict: The health status
     """

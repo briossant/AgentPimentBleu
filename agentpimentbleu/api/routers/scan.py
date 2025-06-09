@@ -1,22 +1,30 @@
 """
 AgentPimentBleu - Scan Router
 
-This module defines the API endpoints for initiating scans.
+This module defines the API endpoints for initiating and monitoring scans.
 """
 
 import uuid
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Path as FastAPIPath
+from typing import Optional
 
-from agentpimentbleu.api.models.scan_models import ScanRequest, ScanOutput, SCAResult, VulnerabilityDetail
-from agentpimentbleu.core.graphs.sca_impact_graph import run_sca_scan
+from agentpimentbleu.api.models.scan_models import (
+    ScanRequest, ScanInitiatedResponse, ScanProgressResponse,
+    InitialAuditResponse, ProcessedVulnerabilitiesResponse, ScanReportOutput,
+    ErrorContext, ErrorCodeEnum, VulnerabilityDetail, RawVulnerabilityFromAudit,
+    # Legacy models for backward compatibility
+    ScanOutput, SCAResult
+)
+from agentpimentbleu.core.graphs.sca_impact_graph import execute_full_scan_logic, run_sca_scan
 from agentpimentbleu.config.config import get_settings
 from agentpimentbleu.utils.logger import get_logger
+from agentpimentbleu.api import scan_jobs as job_manager
 
 logger = get_logger()
 
 router = APIRouter()
 
-# Define severity order (most severe to least severe)
+# Define severity order (most severe to least severe) - used for legacy endpoint
 SEVERITY_ORDER = {
     "Critical": 0,
     "High": 1,
@@ -31,11 +39,174 @@ def get_severity_sort_key(vulnerability_dict: dict):
     severity = vulnerability_dict.get('danger_rating', 'Unknown')
     return SEVERITY_ORDER.get(severity, SEVERITY_ORDER["Unknown"])
 
-
-@router.post("/", response_model=ScanOutput)
-async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
+# --- Helper to get job or raise 404 ---
+def get_job_or_404(scan_id: uuid.UUID):
     """
-    Scan a repository for vulnerabilities.
+    Get a scan job by ID or raise a 404 error if not found.
+
+    Args:
+        scan_id: The unique identifier for the scan job
+
+    Returns:
+        The scan job dictionary
+
+    Raises:
+        HTTPException: If the scan job is not found
+    """
+    job = job_manager.get_scan_job(scan_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorContext(error_code=ErrorCodeEnum.SCAN_NOT_FOUND, error_message="Scan ID not found").model_dump()
+        )
+    return job
+
+@router.post("/", response_model=ScanInitiatedResponse, status_code=202)
+async def initiate_new_scan(scan_request: ScanRequest, background_tasks: BackgroundTasks):
+    """
+    Initiate a new scan for a repository.
+
+    Args:
+        scan_request (ScanRequest): The scan request
+        background_tasks (BackgroundTasks): FastAPI background tasks
+
+    Returns:
+        ScanInitiatedResponse: The scan initiation response
+    """
+    logger.info(f"Received scan request for {scan_request.repo_source}")
+
+    # Generate a unique scan ID
+    scan_id = uuid.uuid4()
+
+    # Create a job for tracking
+    job_manager.create_scan_job(scan_id, scan_request.repo_source)
+
+    # Store API key overrides and recursion limit if provided
+    app_config_overrides = {}
+    if scan_request.gemini_api_key:
+        app_config_overrides['gemini_api_key'] = scan_request.gemini_api_key
+    if scan_request.mistral_api_key:
+        app_config_overrides['mistral_api_key'] = scan_request.mistral_api_key
+
+    if app_config_overrides:  # Only store if there are actual overrides
+        job_manager.scan_jobs[scan_id]['app_config_override'] = app_config_overrides
+    if scan_request.recursion_limit is not None:
+        job_manager.scan_jobs[scan_id]['recursion_limit_override'] = scan_request.recursion_limit
+
+    logger.info(f"[{scan_id}] Initiating scan for {scan_request.repo_source}")
+    background_tasks.add_task(
+        execute_full_scan_logic,
+        scan_id,
+        scan_request.repo_source,
+        job_manager.scan_jobs[scan_id]['app_config_override'],  # Pass the overrides
+        job_manager.scan_jobs[scan_id]['recursion_limit_override']
+    )
+
+    return ScanInitiatedResponse(scan_id=scan_id, status="INITIATED")
+
+
+@router.get("/{scan_id}/progress", response_model=ScanProgressResponse)
+async def get_scan_progress_endpoint(scan_id: uuid.UUID = FastAPIPath(..., description="The unique identifier of the scan.")):
+    """
+    Get the progress of a scan.
+
+    Args:
+        scan_id (uuid.UUID): The unique identifier of the scan
+
+    Returns:
+        ScanProgressResponse: The scan progress
+    """
+    job = get_job_or_404(scan_id)
+    return ScanProgressResponse(
+        scan_id=scan_id,
+        overall_status=job.get("status", "UNKNOWN"),
+        current_step_description=job.get("current_step_description"),
+        audit_vulnerabilities_found=job.get("audit_vulnerabilities_found"),
+        llm_processed_vulnerabilities=job.get("llm_processed_vulnerabilities"),
+        error_context=ErrorContext(**job["error_context"]) if job.get("error_context") else None
+    )
+
+
+@router.get("/{scan_id}/initial-audit", response_model=InitialAuditResponse)
+async def get_initial_audit_results_endpoint(scan_id: uuid.UUID = FastAPIPath(..., description="The unique identifier of the scan.")):
+    """
+    Get the initial audit results of a scan.
+
+    Args:
+        scan_id (uuid.UUID): The unique identifier of the scan
+
+    Returns:
+        InitialAuditResponse: The initial audit results
+    """
+    job = get_job_or_404(scan_id)
+    initial_audit_data = job.get("initial_audit_results")
+    if not initial_audit_data:  # Could be InitialAuditResponse model or None
+        raise HTTPException(
+            status_code=404,  # Or 204 if preferred for "not yet available"
+            detail=ErrorContext(error_code=ErrorCodeEnum.RESULTS_NOT_YET_AVAILABLE, error_message="Initial audit results not yet available.").model_dump()
+        )
+    # initial_audit_data should already be an InitialAuditResponse model instance or dict convertible to it
+    if isinstance(initial_audit_data, dict):
+        return InitialAuditResponse(**initial_audit_data)
+    return initial_audit_data
+
+
+@router.get("/{scan_id}/processed-vulnerabilities", response_model=ProcessedVulnerabilitiesResponse)
+async def get_processed_vulnerabilities_endpoint(scan_id: uuid.UUID = FastAPIPath(..., description="The unique identifier of the scan.")):
+    """
+    Get the processed vulnerabilities of a scan.
+
+    Args:
+        scan_id (uuid.UUID): The unique identifier of the scan
+
+    Returns:
+        ProcessedVulnerabilitiesResponse: The processed vulnerabilities
+    """
+    job = get_job_or_404(scan_id)
+    processed_vulns_data = job.get("processed_vulnerabilities", [])  # Should be list of VulnerabilityDetail
+
+    # Data should already be List[VulnerabilityDetail] if add_processed_vulnerability stores them as such
+    return ProcessedVulnerabilitiesResponse(
+        scan_id=scan_id,
+        vulnerabilities=processed_vulns_data
+    )
+
+
+@router.get("/{scan_id}/report", response_model=ScanReportOutput)
+async def get_scan_report_endpoint(scan_id: uuid.UUID = FastAPIPath(..., description="The unique identifier of the scan.")):
+    """
+    Get the final report of a scan.
+
+    Args:
+        scan_id (uuid.UUID): The unique identifier of the scan
+
+    Returns:
+        ScanReportOutput: The scan report
+    """
+    job = get_job_or_404(scan_id)
+    final_report_data = job.get("final_report")  # Should be ScanReportOutput model or dict convertible
+
+    if not final_report_data:
+        # If still in progress, return a report with "IN_PROGRESS" status
+        return ScanReportOutput(
+            repo_source=job["repo_source"],
+            scan_id=scan_id,
+            status="IN_PROGRESS",
+            overall_summary="Scan is currently in progress. Check /progress for status.",
+            error_context=ErrorContext(**job["error_context"]) if job.get("error_context") else None
+        )
+    if isinstance(final_report_data, dict):
+        return ScanReportOutput(**final_report_data)
+    return final_report_data
+
+
+# Legacy endpoint for backward compatibility
+@router.post("/legacy", response_model=ScanOutput, tags=["Legacy"])
+async def scan_repository_legacy(scan_request: ScanRequest) -> ScanOutput:
+    """
+    Scan a repository for vulnerabilities (legacy synchronous endpoint).
+
+    This endpoint is maintained for backward compatibility. New clients should use the asynchronous API.
 
     Args:
         scan_request (ScanRequest): The scan request
@@ -43,7 +214,7 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
     Returns:
         ScanOutput: The scan output
     """
-    logger.info(f"Received scan request for {scan_request.repo_source}")
+    logger.info(f"Received legacy scan request for {scan_request.repo_source}")
 
     # Generate a unique scan ID
     scan_id = str(uuid.uuid4())

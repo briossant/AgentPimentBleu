@@ -5,7 +5,7 @@ This module provides a web-based UI for the AgentPimentBleu security scanner.
 """
 
 import gradio as gr
-from typing import Tuple, Dict, List, Optional
+from typing import Tuple, Dict, List, Optional, Generator
 from PIL import Image
 
 from agentpimentbleu.utils.logger import get_logger
@@ -16,16 +16,103 @@ from agentpimentbleu.app.report_formatter import (
     format_summary_as_markdown,
     format_details_as_markdown
 )
-from agentpimentbleu.app.api_client import scan_repository_api
+from agentpimentbleu.app.api_client import (
+    initiate_scan_api, poll_scan_status_api, get_scan_report_api,
+    scan_repository_api  # Legacy function for backward compatibility
+)
 from agentpimentbleu.utils.plotting import create_vulnerability_chart
 
 logger = get_logger()
 
 
+def new_scan_repository_flow(
+    repo_source: str, 
+    gemini_api_key: Optional[str] = None, 
+    mistral_api_key: Optional[str] = None, 
+    recursion_limit: Optional[int] = None
+) -> Generator[Tuple[str, str, Dict, str, Optional[Image.Image]], None, None]:
+    """
+    Scan a repository for vulnerabilities using the new asynchronous API.
+    This is a generator function that yields updates as the scan progresses.
 
+    Args:
+        repo_source (str): URL or local path to the repository
+        gemini_api_key (str, optional): Gemini API key to override the one in config
+        mistral_api_key (str, optional): Mistral API key to override the one in config
+        recursion_limit (int, optional): Max recursion limit for the graph.
+
+    Yields:
+        Tuple[str, str, Dict, str, Optional[Image.Image]]: 
+            Summary, detailed results as Markdown, raw JSON, status message, and vulnerability chart
+    """
+    logger.info(f"UI: Initiating scan for repository: {repo_source}")
+    yield "", "", {}, "Initiating scan...", None  # Initial update
+
+    scan_id, error = initiate_scan_api(repo_source, gemini_api_key, mistral_api_key, recursion_limit)
+
+    if error or not scan_id:
+        error_msg = error.get("error_message", "Failed to initiate scan.") if error else "Failed to initiate scan."
+        logger.error(f"UI: Error initiating scan: {error_msg}")
+        yield f"## Error\n\n{error_msg}", f"## Error\n\n{error_msg}", error or {}, f"Scan initiation failed: {error_msg}", None
+        return
+
+    yield "", "", {}, f"Scan initiated (ID: {scan_id}). Polling for progress...", None
+
+    # Poll for status
+    final_status_data = None
+    for progress_update in poll_scan_status_api(scan_id):
+        final_status_data = progress_update  # Keep last status
+        status_message = f"Scan ID: {scan_id}\nStatus: {progress_update.get('overall_status', 'Polling...')}\n" \
+                         f"Step: {progress_update.get('current_step_description', 'N/A')}"
+
+        if progress_update.get("error_context"):
+            err_ctx = progress_update["error_context"]
+            status_message += f"\nError: {err_ctx.get('error_code')} - {err_ctx.get('error_message')}"
+            yield "", "", progress_update, status_message, None  # Update status box
+            # Decide if to stop here or wait for final report
+            if progress_update.get('overall_status') == "FAILED":
+                break
+
+        yield "", "", progress_update, status_message, None  # Update status box only
+
+        if progress_update.get("overall_status") in ["COMPLETED", "FAILED", "ANALYSIS_DEPTH_LIMITED"]:
+            break  # Exit polling loop
+
+    if not final_status_data:  # Should not happen if poll_scan_status_api yields at least once
+        yield "## Error", "## Error", {}, "Polling failed to retrieve status.", None
+        return
+
+    # Fetch the final report
+    yield "", "", final_status_data, "Polling complete. Fetching final report...", None
+
+    report_result = get_scan_report_api(scan_id)
+
+    if not report_result or report_result.get("error_code") or report_result.get("status") == "FAILED_SCAN":
+        error_msg = report_result.get("error_context", {}).get("error_message", "Failed to retrieve report or scan failed.")
+        logger.error(f"UI: Error fetching report or scan failed: {error_msg}")
+        error_md = f"## Scan Failed or Error Retrieving Report\n\nID: {scan_id}\nDetails: {error_msg}"
+        yield error_md, error_md, report_result or {}, f"Failed: {error_msg}", None
+        return
+
+    # Successfully got the report
+    logger.info(f"UI: Scan report received for {scan_id}")
+    summary_md = format_summary_as_markdown(report_result)
+    details_md = format_details_as_markdown(report_result)
+
+    chart_image = None
+    sca_results = report_result.get('sca_results', {})
+    if sca_results:  # sca_results can be None
+        vulnerabilities = sca_results.get('vulnerabilities', [])
+        if vulnerabilities:
+            chart_image = create_vulnerability_chart(vulnerabilities)
+
+    yield summary_md, details_md, report_result, f"Scan {report_result.get('status', 'completed')} for ID: {scan_id}. Report available.", chart_image
+
+
+# Legacy function for backward compatibility
 def scan_repository(repo_source: str, gemini_api_key: Optional[str] = None, mistral_api_key: Optional[str] = None, recursion_limit: Optional[int] = None) -> Tuple[str, str, Dict, str, Optional[Image.Image]]:
     """
-    Scan a repository for vulnerabilities.
+    Scan a repository for vulnerabilities (legacy synchronous version).
 
     Args:
         repo_source (str): URL or local path to the repository
@@ -37,7 +124,7 @@ def scan_repository(repo_source: str, gemini_api_key: Optional[str] = None, mist
         Tuple[str, str, Dict, str, Optional[Image.Image]]: 
             Summary, detailed results as Markdown, raw JSON, status message, and vulnerability chart
     """
-    logger.info(f"Scanning repository: {repo_source} with recursion limit: {recursion_limit}")
+    logger.info(f"Scanning repository (legacy): {repo_source} with recursion limit: {recursion_limit}")
     if gemini_api_key:
         logger.info("Gemini API key provided from UI.")
     if mistral_api_key:
@@ -128,9 +215,9 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
             results_json
         ) = create_scan_tab()
 
-    # Handle scan button click
+    # Handle scan button click - now uses the generator
     scan_button.click(
-        fn=scan_repository,
+        fn=new_scan_repository_flow,  # Use the new generator function
         inputs=[repo_input, gemini_api_key_input, mistral_api_key_input, recursion_limit_slider],
         outputs=[summary_md, details_md, results_json, status_box, vuln_chart]
     )
