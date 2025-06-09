@@ -88,35 +88,65 @@ class LoggerSingleton:
             for handler in self._logger.handlers:
                 handler.setLevel(level)
 
-    def debug(self, message: str):
-        """Log a debug message."""
-        if self._logger:
-            caller = find_caller_function(depth=3)
-            self._logger.debug(f"[{caller}] {message}")
+    def debug(self, message: str, exc_info=False):
+        """
+        Log a debug message.
 
-    def info(self, message: str):
-        """Log an informational message."""
+        Args:
+            message (str): The debug message to log
+            exc_info (bool, optional): If True, adds exception information to the logging message. Defaults to False.
+        """
         if self._logger:
             caller = find_caller_function(depth=3)
-            self._logger.info(f"[{caller}] {message}")
+            self._logger.debug(f"[{caller}] {message}", exc_info=exc_info)
 
-    def warning(self, message: str):
-        """Log a warning message."""
-        if self._logger:
-            caller = find_caller_function(depth=3)
-            self._logger.warning(f"[{caller}] {message}")
+    def info(self, message: str, exc_info=False):
+        """
+        Log an informational message.
 
-    def error(self, message: str):
-        """Log an error message."""
+        Args:
+            message (str): The informational message to log
+            exc_info (bool, optional): If True, adds exception information to the logging message. Defaults to False.
+        """
         if self._logger:
             caller = find_caller_function(depth=3)
-            self._logger.error(f"[{caller}] {message}")
+            self._logger.info(f"[{caller}] {message}", exc_info=exc_info)
 
-    def critical(self, message: str):
-        """Log a critical message."""
+    def warning(self, message: str, exc_info=False):
+        """
+        Log a warning message.
+
+        Args:
+            message (str): The warning message to log
+            exc_info (bool, optional): If True, adds exception information to the logging message. Defaults to False.
+        """
         if self._logger:
             caller = find_caller_function(depth=3)
-            self._logger.critical(f"[{caller}] {message}")
+            self._logger.warning(f"[{caller}] {message}", exc_info=exc_info)
+
+    def error(self, message: str, exc_info=False):
+        """
+        Log an error message.
+
+        Args:
+            message (str): The error message to log
+            exc_info (bool, optional): If True, adds exception information to the logging message. Defaults to False.
+        """
+        if self._logger:
+            caller = find_caller_function(depth=3)
+            self._logger.error(f"[{caller}] {message}", exc_info=exc_info)
+
+    def critical(self, message: str, exc_info=False):
+        """
+        Log a critical message.
+
+        Args:
+            message (str): The critical message to log
+            exc_info (bool, optional): If True, adds exception information to the logging message. Defaults to False.
+        """
+        if self._logger:
+            caller = find_caller_function(depth=3)
+            self._logger.critical(f"[{caller}] {message}", exc_info=exc_info)
 
 
 # Convenience function to get the logger instance

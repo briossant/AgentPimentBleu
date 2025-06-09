@@ -90,22 +90,41 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
 
         # Check if there was an error
         if scan_result.get("error_message"):
-            logger.error(f"Scan for {scan_request.repo_source} failed or completed with errors: {scan_result['error_message']}")
+            error_detail = scan_result["error_message"]
 
-            # Even if it "completed" with errors, present it clearly
-            # Provide any partial SCA results if available
-            return ScanOutput(
-                repo_source=scan_request.repo_source,
-                scan_id=scan_id,
-                status="failed",
-                sca_results=SCAResult(
-                    dependency_file_found=scan_result.get("project_manifest_path"),
-                    vulnerabilities=[VulnerabilityDetail(**v) for v in scan_result.get("final_vulnerabilities", [])],
-                    issues_summary=f"Scan encountered an error. Partial results might be shown. Found {len(scan_result.get('final_vulnerabilities', []))} vulnerabilities."
-                ) if scan_result.get("final_vulnerabilities") else None,
-                error_message=scan_result["error_message"],
-                overall_summary=f"Scan for {scan_request.repo_source} encountered an error: {scan_result['error_message']}. Check details."
-            )
+            # Enhanced Error Handling for API Response
+            if error_detail.startswith("LLM_PROVIDER_FAILURE:"):
+                logger.error(f"Scan for {scan_request.repo_source} failed due to critical LLM provider issue: {error_detail}")
+                return ScanOutput(
+                    repo_source=scan_request.repo_source,
+                    scan_id=scan_id,
+                    status="failed",
+                    sca_results=SCAResult( # Can still return any vulns found *before* the LLM failure
+                        dependency_file_found=scan_result.get("project_manifest_path"),
+                        vulnerabilities=[VulnerabilityDetail(**v) for v in scan_result.get("final_vulnerabilities", [])],
+                        issues_summary=(
+                            f"Scan failed due to LLM provider error. "
+                            f"Found {len(scan_result.get('final_vulnerabilities', []))} vulnerabilities before failure."
+                        )
+                    ) if scan_result.get("final_vulnerabilities") else None,
+                    error_message=error_detail, # Pass the detailed LLM failure message
+                    overall_summary=f"Scan failed: Critical LLM provider error. Please check your API key or the provider's status. Details: {error_detail.split(': ', 1)[1] if ': ' in error_detail else error_detail}"
+                )
+            else:
+                # General error from the scan
+                logger.error(f"Scan for {scan_request.repo_source} failed or completed with errors: {error_detail}")
+                return ScanOutput(
+                    repo_source=scan_request.repo_source,
+                    scan_id=scan_id,
+                    status="failed",
+                    sca_results=SCAResult(
+                        dependency_file_found=scan_result.get("project_manifest_path"),
+                        vulnerabilities=[VulnerabilityDetail(**v) for v in scan_result.get("final_vulnerabilities", [])],
+                        issues_summary=f"Scan encountered an error. Partial results might be shown. Found {len(scan_result.get('final_vulnerabilities', []))} vulnerabilities."
+                    ) if scan_result.get("final_vulnerabilities") else None,
+                    error_message=error_detail,
+                    overall_summary=f"Scan for {scan_request.repo_source} encountered an error: {error_detail}. Check details."
+                )
 
         # Convert the scan result to the API model
         # First try to get the processed vulnerabilities, then fall back to the raw audit tool vulnerabilities
@@ -178,5 +197,20 @@ async def scan_repository(scan_request: ScanRequest) -> ScanOutput:
         return scan_output
 
     except Exception as e:
-        logger.error(f"Error during scan: {e}")  # Log the error
-        raise HTTPException(status_code=500, detail=f"Error during scan: {e}")
+        error_message = str(e)
+        logger.error(f"Error during scan: {error_message}")  # Log the error
+
+        # Check if this is an LLM provider failure
+        if error_message.startswith("LLM_PROVIDER_FAILURE:"):
+            # Return a structured response for LLM provider failures
+            return ScanOutput(
+                repo_source=scan_request.repo_source,
+                scan_id=scan_id,
+                status="failed",
+                sca_results=None,  # No results since the scan was terminated
+                error_message=error_message,
+                overall_summary=f"Scan failed: Critical LLM provider error. Please check your API key or the provider's status. Details: {error_message.split(': ', 1)[1] if ': ' in error_message else error_message}"
+            )
+        else:
+            # For other errors, raise an HTTP exception
+            raise HTTPException(status_code=500, detail=f"Error during scan: {error_message}")

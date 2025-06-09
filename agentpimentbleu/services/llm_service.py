@@ -20,6 +20,21 @@ from agentpimentbleu.utils.logger import get_logger
 logger = get_logger()
 
 
+class LLMAuthenticationError(Exception):
+    """Custom exception for LLM authentication failures."""
+    pass
+
+
+class LLMConfigurationError(Exception):
+    """Custom exception for LLM configuration errors (e.g., placeholder API key)."""
+    pass
+
+
+class LLMConnectionError(Exception):
+    """Custom exception for LLM connection or availability issues."""
+    pass
+
+
 class LLMService:
     """
     Service for interacting with different LLM providers.
@@ -87,20 +102,25 @@ class LLMService:
 
         Returns:
             BaseChatModel: Langchain chat model instance for Gemini
+
+        Raises:
+            LLMConfigurationError: If API key is missing or is a placeholder
         """
         api_key = config.get('api_key')
         model = config.get('model', 'gemini-pro')
 
         if not api_key:
-            logger.error("No API key found for Gemini")
-            raise ValueError("No API key found for Gemini")
+            msg = "No API key found for Gemini in the configuration."
+            logger.error(msg)
+            raise LLMConfigurationError(msg)
 
         # Check if the API key is still the placeholder value
         if api_key == 'YOUR_GEMINI_API_KEY':
-            logger.error("Gemini API key is set to the default placeholder value. Please set a valid API key.")
+            msg = "Gemini API key is set to the default placeholder value. Please set a valid API key."
+            logger.error(msg)
             logger.info("You can set the API key using the APB_LLM_PROVIDERS__GEMINI__API_KEY environment variable")
             logger.info("or by creating a configuration file at ~/.config/agentpimentbleu/settings.yaml")
-            raise ValueError("Invalid Gemini API key: Using placeholder value. Please set a valid API key.")
+            raise LLMConfigurationError(msg)
 
         logger.info(f"Initializing Gemini chat model with model: {model}")
         logger.debug(f"API key length: {len(api_key)} characters")
@@ -142,20 +162,25 @@ class LLMService:
 
         Returns:
             BaseChatModel: Langchain chat model instance for Mistral
+
+        Raises:
+            LLMConfigurationError: If API key is missing or is a placeholder
         """
         api_key = config.get('api_key')
         model = config.get('model', 'devstral-small-2505')
 
         if not api_key:
-            logger.error("No API key found for Mistral")
-            raise ValueError("No API key found for Mistral")
+            msg = "No API key found for Mistral in the configuration."
+            logger.error(msg)
+            raise LLMConfigurationError(msg)
 
         # Check if the API key is still the placeholder value
         if api_key == 'YOUR_MISTRAL_API_KEY':
-            logger.error("Mistral API key is set to the default placeholder value. Please set a valid API key.")
+            msg = "Mistral API key is set to the default placeholder value. Please set a valid API key."
+            logger.error(msg)
             logger.info("You can set the API key using the APB_LLM_PROVIDERS__MISTRAL__API_KEY environment variable")
             logger.info("or by creating a configuration file at ~/.config/agentpimentbleu/settings.yaml")
-            raise ValueError("Invalid Mistral API key: Using placeholder value. Please set a valid API key.")
+            raise LLMConfigurationError(msg)
 
         logger.info(f"Initializing Mistral chat model with model: {model}")
         logger.debug(f"API key length: {len(api_key)} characters")
@@ -177,12 +202,18 @@ class LLMService:
 
         Returns:
             str: The content of the LLM's response
+
+        Raises:
+            LLMConfigurationError: If there's a configuration error (e.g., missing or placeholder API key)
+            LLMAuthenticationError: If there's an authentication error (e.g., invalid API key)
+            LLMConnectionError: If there's a connection error (e.g., rate limit exceeded)
         """
-        logger.info(f"Invoking LLM with provider: {provider_name or 'default'}")
+        logger.info(f"Invoking LLM with provider: {provider_name or self.config.get('active_llm_provider', 'default')}")
+        active_provider = provider_name or self.config.get('active_llm_provider')
 
         try:
             # Get the LLM
-            llm = self.get_llm(provider_name)
+            llm = self.get_llm(active_provider)
 
             # Create a chain with the prompt template and LLM
             chain = prompt_template | llm | StrOutputParser()
@@ -192,31 +223,26 @@ class LLMService:
 
             return response
 
-        except ValueError as e:
-            # Handle configuration errors
-            logger.error(f"Configuration error when invoking LLM: {e}")
-            if "API key" in str(e):
-                logger.error("Please check your API key configuration.")
-                logger.info("For Gemini, set the APB_LLM_PROVIDERS__GEMINI__API_KEY environment variable")
-                logger.info("or update your ~/.config/agentpimentbleu/settings.yaml file.")
-            raise
+        except LLMConfigurationError as e:
+            # Catch our custom config error
+            logger.error(f"LLM Configuration Error for provider '{active_provider}': {e}")
+            raise  # Re-raise to be caught by graph nodes
+        except LLMAuthenticationError as e:
+            # Catch our custom auth error
+            logger.error(f"LLM Authentication Error for provider '{active_provider}': {e}")
+            raise  # Re-raise
         except Exception as e:
-            # Handle other errors, including API-related errors
+            # Catch other Langchain/API errors
             error_msg = str(e)
-            logger.error(f"Error invoking LLM: {error_msg}")
+            logger.error(f"Error invoking LLM provider '{active_provider}': {error_msg}")
 
-            # Add more specific error handling for common API issues
-            if "API_KEY_INVALID" in error_msg:
-                logger.error("The provided API key is invalid. Please check your API key and ensure it's correct.")
-                logger.info("For Gemini, you can get a valid API key from https://ai.google.dev/")
-            elif "PERMISSION_DENIED" in error_msg:
-                logger.error("Permission denied. Your API key may not have access to the requested model.")
-            elif "QUOTA_EXCEEDED" in error_msg:
-                logger.error("API quota exceeded. You may need to wait or upgrade your API plan.")
-            elif "RESOURCE_EXHAUSTED" in error_msg:
-                logger.error("Resource exhausted. You may be rate limited. Try again later.")
-
-            # Log how to parse the LLM response error
-            logger.error(f"Error parsing LLM response: {error_msg}")
-
-            raise
+            # Categorize the error based on the error message
+            if "API key" in error_msg.lower() or "authenticate" in error_msg.lower() or \
+               "401" in error_msg or "Unauthorized" in error_msg:
+                raise LLMAuthenticationError(f"Authentication failed for {active_provider}: {error_msg}") from e
+            elif "rate limit" in error_msg.lower() or "quota" in error_msg.lower() or "429" in error_msg:
+                raise LLMConnectionError(f"Rate limit or quota exceeded for {active_provider}: {error_msg}") from e
+            elif "permission" in error_msg.lower() or "denied" in error_msg.lower() or "403" in error_msg:
+                raise LLMAuthenticationError(f"Permission denied for {active_provider} (check API key permissions for the model): {error_msg}") from e
+            # Add more specific error condition checks if needed
+            raise LLMConnectionError(f"Generic error with LLM provider {active_provider}: {error_msg}") from e

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, TypedDict, Any, Callable
 import os
 import json
 import re
+import inspect
 
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
@@ -15,7 +16,7 @@ from langgraph.prebuilt import ToolNode
 from agentpimentbleu.services.git_service import GitService
 from agentpimentbleu.services.dependency_service import DependencyService
 from agentpimentbleu.services.rag_service import RAGService
-from agentpimentbleu.services.llm_service import LLMService
+from agentpimentbleu.services.llm_service import LLMService, LLMAuthenticationError, LLMConfigurationError, LLMConnectionError
 from agentpimentbleu.config.config import get_settings, Settings
 from agentpimentbleu.utils.logger import get_logger
 from agentpimentbleu.core.prompts.sca_impact_prompts import (
@@ -29,10 +30,23 @@ from agentpimentbleu.core.prompts.sca_impact_prompts import (
 logger = get_logger()
 
 
+def get_current_node_name():
+    """
+    Helper function to get the name of the current function (node).
+
+    Returns:
+        str: The name of the calling function
+    """
+    # inspect.currentframe().f_code.co_name gives the name of *this* function
+    # f_back gives the caller's frame
+    return inspect.currentframe().f_back.f_code.co_name
+
+
 class ScaImpactState(TypedDict, total=False):
     """
     State for the SCA Impact Graph.
     """
+    app_config: Settings  # Application configuration
     repo_source: str  # URL or local path
     cloned_repo_path: Optional[str]  # Path to the cloned repository
     project_type: Optional[str]  # Type of project (e.g., 'python', 'javascript')
@@ -241,19 +255,30 @@ def analyze_cve_description_node(state: ScaImpactState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updated state
     """
-    logger.info("Analyzing CVE description")
+    node_name = get_current_node_name()
+    logger.info(f"Running node: {node_name}")
 
     try:
         if not state.get('current_vulnerability_details'):
-            error_message = "No current vulnerability details provided"
+            error_message = f"No current vulnerability details provided in {node_name}"
             logger.error(error_message)
             return {"current_cve_analysis_results": None, "error_message": error_message}
 
         # Get the current vulnerability details
         vuln_details = state['current_vulnerability_details']
 
-        # Create the LLM service
-        llm_service = LLMService()
+        # Get the scan-specific config from state
+        scan_config = state.get('app_config')
+        if not scan_config:
+            # This should ideally not happen if initial_state is set correctly
+            logger.error(f"[{node_name}] App config not found in state. Using global settings.")
+            scan_config = get_settings() 
+
+        # Create the LLM service with scan-specific config
+        llm_service = LLMService(config=scan_config)
+
+        # Determine active provider based on the scan_config
+        active_provider = scan_config.get('active_llm_provider', scan_config.get('default_llm_provider', 'gemini'))
 
         # Use the imported prompt template
         prompt_template = CVE_ANALYSIS_PROMPT
@@ -267,40 +292,67 @@ def analyze_cve_description_node(state: ScaImpactState) -> Dict[str, Any]:
             "tool_advisory_link": vuln_details.get('advisory_link', 'No link available')
         }
 
-        # Invoke the LLM
         try:
-            response = llm_service.invoke_llm(prompt_template, input_data)
+            # Invoke the LLM with the specific provider
+            response_str = llm_service.invoke_llm(prompt_template, input_data, provider_name=active_provider)
 
             # Parse the JSON response
             import json
             import re
 
             # Extract JSON from the response (in case the LLM adds extra text)
-            json_match = re.search(r'({.*})', response, re.DOTALL)
+            json_match = re.search(r'({.*})', response_str, re.DOTALL)
             if json_match:
-                json_str = json_match.group(1)
-                current_cve_analysis_results = json.loads(json_str)
+                parsed_response = json.loads(json_match.group(1))
             else:
                 # If no JSON found, try to parse the whole response
-                current_cve_analysis_results = json.loads(response)
+                parsed_response = json.loads(response_str)
 
-            logger.info(f"Successfully analyzed CVE for {vuln_details.get('package_name', 'unknown')}")
+            logger.info(f"[{node_name}] Successfully analyzed CVE for {vuln_details.get('package_name', 'unknown')}")
+            return {"current_cve_analysis_results": parsed_response, "error_message": state.get("error_message")}
 
-        except Exception as e:
-            logger.error(f"Error parsing LLM response: {e}")
-            # Fallback to a basic analysis
-            current_cve_analysis_results = {
-                "vulnerability_type": "Unknown (parsing error)",
-                "affected_components": [vuln_details.get('package_name', 'unknown')],
-                "exploitation_conditions": "Unknown due to parsing error"
+        except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
+            critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
+            logger.critical(critical_msg)
+            # Return the critical error to halt the graph's LLM processing.
+            # Keep any existing critical error if this one is somehow secondary.
+            # Get existing error message and check if it's a critical LLM failure
+            existing_error = state.get("error_message","")
+            return {
+                "current_cve_analysis_results": None, 
+                "error_message": critical_msg if not (existing_error and existing_error.startswith("LLM_PROVIDER_FAILURE:")) else existing_error
             }
-
-        return {"current_cve_analysis_results": current_cve_analysis_results}
+        except json.JSONDecodeError as json_e:
+            error_msg_detail = f"Error in {node_name} parsing LLM response: {json_e}. Response was: {response_str[:500]}"
+            logger.error(error_msg_detail)
+            # This is a parsing error, not a provider failure. Create a fallback.
+            # Preserve any existing critical error_message.
+            fallback_results = {
+                "vulnerability_type": "Unknown (LLM response parsing error)",
+                "affected_components": [vuln_details.get('package_name', 'unknown')],
+                "exploitation_conditions": f"Could not parse LLM response: {json_e}"
+            }
+            # To avoid overwriting a critical LLM_PROVIDER_FAILURE with a parsing error message:
+            current_overall_error = state.get("error_message")
+            if current_overall_error and current_overall_error.startswith("LLM_PROVIDER_FAILURE:"):
+                return {"current_cve_analysis_results": fallback_results, "error_message": current_overall_error}
+            else:
+                # If no critical error yet, we can set a non-critical one for this node or just return fallback.
+                # For simplicity, just return fallback and preserve state's error_message.
+                return {"current_cve_analysis_results": fallback_results, "error_message": current_overall_error}
 
     except Exception as e:
-        error_message = f"Error analyzing CVE description: {e}"
-        logger.error(error_message)
-        return {"current_cve_analysis_results": None, "error_message": error_message}
+        # Generic error within the node
+        error_msg_detail = f"Unexpected error in {node_name}: {e}"
+        logger.error(error_msg_detail, exc_info=True)
+        # Preserve critical error if it exists
+        current_overall_error = state.get("error_message")
+        if current_overall_error and current_overall_error.startswith("LLM_PROVIDER_FAILURE:"):
+            return {"current_cve_analysis_results": None, "error_message": current_overall_error}
+        else:
+            # If no critical error, set this as the error for the current step/vulnerability
+            # This might not halt the entire scan unless made critical.
+            return {"current_cve_analysis_results": None, "error_message": error_msg_detail}
 
 
 def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
@@ -313,16 +365,23 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updated state
     """
-    logger.info("Searching codebase for impact")
+    node_name = get_current_node_name()
+    logger.info(f"Running node: {node_name}")
 
     try:
+        # Check for critical LLM failure from previous nodes
+        error_message = state.get("error_message", "")
+        if error_message and error_message.startswith("LLM_PROVIDER_FAILURE:"):
+            logger.warning(f"[{node_name}] Skipping due to previous LLM provider failure: {state['error_message']}")
+            return {"error_message": state.get("error_message")}  # Preserve the error message
+
         if not state.get('current_vulnerability_details') or not state.get('current_cve_analysis_results'):
-            error_message = "Missing vulnerability details or CVE analysis results"
+            error_message = f"Missing vulnerability details or CVE analysis results in {node_name}"
             logger.error(error_message)
             return {"error_message": error_message}
 
         if not state.get('project_code_index_path'):
-            error_message = "No RAG index path provided"
+            error_message = f"No RAG index path provided in {node_name}"
             logger.error(error_message)
             return {"error_message": error_message}
 
@@ -330,9 +389,18 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
         vuln_details = state['current_vulnerability_details']
         cve_analysis = state['current_cve_analysis_results']
 
-        # Create the LLM service and RAG service
-        llm_service = LLMService()
+        # Get the scan-specific config from state
+        scan_config = state.get('app_config')
+        if not scan_config:
+            logger.error(f"[{node_name}] App config not found in state. Using global settings.")
+            scan_config = get_settings()
+
+        # Create the LLM service with scan-specific config and RAG service
+        llm_service = LLMService(config=scan_config)
         rag_service = RAGService()
+
+        # Determine active provider based on the scan_config
+        active_provider = scan_config.get('active_llm_provider', scan_config.get('default_llm_provider', 'gemini'))
 
         # Load the RAG index
         index = rag_service.load_index(state['project_code_index_path'])
@@ -355,7 +423,7 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
 
         # Invoke the LLM to formulate queries
         try:
-            query_response = llm_service.invoke_llm(query_formulation_prompt, query_input_data)
+            query_response = llm_service.invoke_llm(query_formulation_prompt, query_input_data, provider_name=active_provider)
 
             # Parse the JSON response
             import re
@@ -372,11 +440,27 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
             if not isinstance(rag_queries, list):
                 rag_queries = [rag_queries]
 
-            logger.info(f"Formulated {len(rag_queries)} RAG queries")
+            logger.info(f"[{node_name}] Formulated {len(rag_queries)} RAG queries")
 
+        except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
+            critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
+            logger.critical(critical_msg)
+            # Get existing error message and check if it's a critical LLM failure
+            existing_error = state.get("error_message","")
+            return {
+                "current_cve_analysis_results": state.get('current_cve_analysis_results'),
+                "error_message": critical_msg if not (existing_error and existing_error.startswith("LLM_PROVIDER_FAILURE:")) else existing_error
+            }
+        except json.JSONDecodeError as json_e:
+            logger.error(f"Error parsing RAG query formulation response: {json_e}")
+            # Fallback to basic queries for JSON parsing errors
+            package_name = vuln_details.get('package_name', 'unknown')
+            affected_components = cve_analysis.get('affected_components', [package_name])
+            rag_queries = [f"import {package_name}", f"from {package_name} import"]
+            rag_queries.extend([f"using {comp}" for comp in affected_components])
         except Exception as e:
             logger.error(f"Error formulating RAG queries: {e}")
-            # Fallback to basic queries
+            # Fallback to basic queries for other errors
             package_name = vuln_details.get('package_name', 'unknown')
             affected_components = cve_analysis.get('affected_components', [package_name])
             rag_queries = [f"import {package_name}", f"from {package_name} import"]
@@ -405,7 +489,7 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
 
         # Invoke the LLM to analyze the RAG results
         try:
-            analysis_response = llm_service.invoke_llm(analysis_prompt, analysis_input_data)
+            analysis_response = llm_service.invoke_llm(analysis_prompt, analysis_input_data, provider_name=active_provider)
 
             # Parse the JSON response
             json_match = re.search(r'({.*})', analysis_response, re.DOTALL)
@@ -416,11 +500,29 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
                 # If no JSON found, try to parse the whole response
                 analysis_results = json.loads(analysis_response)
 
-            logger.info(f"Successfully analyzed RAG results for {vuln_details.get('package_name', 'unknown')}")
+            logger.info(f"[{node_name}] Successfully analyzed RAG results for {vuln_details.get('package_name', 'unknown')}")
 
+        except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
+            critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
+            logger.critical(critical_msg)
+            # Get existing error message and check if it's a critical LLM failure
+            existing_error = state.get("error_message","")
+            return {
+                "current_cve_analysis_results": state.get('current_cve_analysis_results'),
+                "error_message": critical_msg if not (existing_error and existing_error.startswith("LLM_PROVIDER_FAILURE:")) else existing_error
+            }
+        except json.JSONDecodeError as json_e:
+            logger.error(f"Error parsing RAG analysis response: {json_e}")
+            # Fallback to a basic analysis for JSON parsing errors
+            analysis_results = {
+                "usage_found": False,
+                "evidence_snippet": None,
+                "file_path": None,
+                "explanation": f"Error parsing analysis response: {json_e}"
+            }
         except Exception as e:
-            logger.error(f"Error parsing analysis response: {e}")
-            # Fallback to a basic analysis
+            logger.error(f"Error in RAG analysis: {e}")
+            # Fallback to a basic analysis for other errors
             analysis_results = {
                 "usage_found": False,
                 "evidence_snippet": None,
@@ -438,12 +540,21 @@ def search_codebase_for_impact_node(state: ScaImpactState) -> Dict[str, Any]:
             "explanation": analysis_results.get('explanation', "No explanation provided")
         })
 
-        return {"current_cve_analysis_results": current_cve_analysis_results}
+        # Preserve any existing error message that might be critical
+        return {
+            "current_cve_analysis_results": current_cve_analysis_results,
+            "error_message": state.get("error_message")  # Preserve existing error message if any
+        }
 
     except Exception as e:
-        error_message = f"Error searching codebase for impact: {e}"
-        logger.error(error_message)
-        return {"error_message": error_message}
+        error_msg_detail = f"Unexpected error in {node_name}: {e}"
+        logger.error(error_msg_detail, exc_info=True)
+        # Preserve critical error if it exists
+        current_overall_error = state.get("error_message")
+        if current_overall_error and current_overall_error.startswith("LLM_PROVIDER_FAILURE:"):
+            return {"current_cve_analysis_results": state.get('current_cve_analysis_results'), "error_message": current_overall_error}
+        else:
+            return {"current_cve_analysis_results": state.get('current_cve_analysis_results'), "error_message": error_msg_detail}
 
 
 def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
@@ -456,11 +567,18 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updated state
     """
-    logger.info("Evaluating impact and danger")
+    node_name = get_current_node_name()
+    logger.info(f"Running node: {node_name}")
 
     try:
+        # Check for critical LLM failure from previous nodes
+        error_message = state.get("error_message", "")
+        if error_message and error_message.startswith("LLM_PROVIDER_FAILURE:"):
+            logger.warning(f"[{node_name}] Skipping due to previous LLM provider failure: {state['error_message']}")
+            return {"error_message": state.get("error_message")}  # Preserve the error message
+
         if not state.get('current_vulnerability_details') or not state.get('current_cve_analysis_results'):
-            error_message = "Missing vulnerability details or CVE analysis results"
+            error_message = f"Missing vulnerability details or CVE analysis results in {node_name}"
             logger.error(error_message)
             return {"error_message": error_message}
 
@@ -468,8 +586,17 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
         vuln_details = state['current_vulnerability_details']
         cve_analysis = state['current_cve_analysis_results']
 
-        # Create the LLM service
-        llm_service = LLMService()
+        # Get the scan-specific config from state
+        scan_config = state.get('app_config')
+        if not scan_config:
+            logger.error(f"[{node_name}] App config not found in state. Using global settings.")
+            scan_config = get_settings()
+
+        # Create the LLM service with scan-specific config
+        llm_service = LLMService(config=scan_config)
+
+        # Determine active provider based on the scan_config
+        active_provider = scan_config.get('active_llm_provider', scan_config.get('default_llm_provider', 'gemini'))
 
         # Use the imported prompt template
         prompt_template = IMPACT_EVALUATION_PROMPT
@@ -488,7 +615,7 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
 
         # Invoke the LLM
         try:
-            response = llm_service.invoke_llm(prompt_template, input_data)
+            response = llm_service.invoke_llm(prompt_template, input_data, provider_name=active_provider)
 
             # Parse the JSON response
             import re
@@ -502,15 +629,34 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
                 # If no JSON found, try to parse the whole response
                 impact_assessment = json.loads(response)
 
-            logger.info(f"Successfully evaluated impact for {vuln_details.get('package_name', 'unknown')}")
+            logger.info(f"[{node_name}] Successfully evaluated impact for {vuln_details.get('package_name', 'unknown')}")
 
-        except Exception as e:
-            logger.error(f"Error parsing LLM response: {e}")
-            # Fallback to a basic assessment
+        except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
+            critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
+            logger.critical(critical_msg)
+            # Get existing error message and check if it's a critical LLM failure
+            existing_error = state.get("error_message","")
+            return {
+                "current_cve_analysis_results": state.get('current_cve_analysis_results'),
+                "error_message": critical_msg if not (existing_error and existing_error.startswith("LLM_PROVIDER_FAILURE:")) else existing_error
+            }
+        except json.JSONDecodeError as json_e:
+            logger.error(f"Error parsing impact assessment response: {json_e}")
+            # Fallback to a basic assessment for JSON parsing errors
             usage_found = cve_analysis.get('usage_found', False)
             impact_assessment = {
                 "is_exploitable_in_context": usage_found,
                 "impact_summary": "Could not generate impact summary due to parsing error",
+                "danger_rating": "Medium" if usage_found else "Low",
+                "rating_justification": f"Default rating based on usage detection. Error: {json_e}"
+            }
+        except Exception as e:
+            logger.error(f"Error in impact assessment: {e}")
+            # Fallback to a basic assessment for other errors
+            usage_found = cve_analysis.get('usage_found', False)
+            impact_assessment = {
+                "is_exploitable_in_context": usage_found,
+                "impact_summary": "Could not generate impact summary due to error",
                 "danger_rating": "Medium" if usage_found else "Low",
                 "rating_justification": f"Default rating based on usage detection. Error: {e}"
             }
@@ -524,12 +670,21 @@ def evaluate_impact_and_danger_node(state: ScaImpactState) -> Dict[str, Any]:
             "rating_justification": impact_assessment.get('rating_justification', 'No justification provided')
         })
 
-        return {"current_cve_analysis_results": current_cve_analysis_results}
+        # Preserve any existing error message that might be critical
+        return {
+            "current_cve_analysis_results": current_cve_analysis_results,
+            "error_message": state.get("error_message")  # Preserve existing error message if any
+        }
 
     except Exception as e:
-        error_message = f"Error evaluating impact and danger: {e}"
-        logger.error(error_message)
-        return {"error_message": error_message}
+        error_msg_detail = f"Unexpected error in {node_name}: {e}"
+        logger.error(error_msg_detail, exc_info=True)
+        # Preserve critical error if it exists
+        current_overall_error = state.get("error_message")
+        if current_overall_error and current_overall_error.startswith("LLM_PROVIDER_FAILURE:"):
+            return {"current_cve_analysis_results": state.get('current_cve_analysis_results'), "error_message": current_overall_error}
+        else:
+            return {"current_cve_analysis_results": state.get('current_cve_analysis_results'), "error_message": error_msg_detail}
 
 
 def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
@@ -542,11 +697,18 @@ def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updated state
     """
-    logger.info("Proposing fix")
+    node_name = get_current_node_name()
+    logger.info(f"Running node: {node_name}")
 
     try:
+        # Check for critical LLM failure from previous nodes
+        error_message = state.get("error_message", "")
+        if error_message and error_message.startswith("LLM_PROVIDER_FAILURE:"):
+            logger.warning(f"[{node_name}] Skipping due to previous LLM provider failure: {state['error_message']}")
+            return {"error_message": state.get("error_message")}  # Preserve the error message
+
         if not state.get('current_vulnerability_details') or not state.get('current_cve_analysis_results'):
-            error_message = "Missing vulnerability details or CVE analysis results"
+            error_message = f"Missing vulnerability details or CVE analysis results in {node_name}"
             logger.error(error_message)
             return {"error_message": error_message}
 
@@ -554,8 +716,17 @@ def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
         vuln_details = state['current_vulnerability_details']
         cve_analysis = state['current_cve_analysis_results']
 
-        # Create the LLM service
-        llm_service = LLMService()
+        # Get the scan-specific config from state
+        scan_config = state.get('app_config')
+        if not scan_config:
+            logger.error(f"[{node_name}] App config not found in state. Using global settings.")
+            scan_config = get_settings()
+
+        # Create the LLM service with scan-specific config
+        llm_service = LLMService(config=scan_config)
+
+        # Determine active provider based on the scan_config
+        active_provider = scan_config.get('active_llm_provider', scan_config.get('default_llm_provider', 'gemini'))
 
         # Use the imported prompt template
         prompt_template = FIX_PROPOSAL_PROMPT
@@ -575,7 +746,7 @@ def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
 
         # Invoke the LLM
         try:
-            response = llm_service.invoke_llm(prompt_template, input_data)
+            response = llm_service.invoke_llm(prompt_template, input_data, provider_name=active_provider)
 
             # Parse the JSON response
             import re
@@ -589,11 +760,29 @@ def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
                 # If no JSON found, try to parse the whole response
                 fix_proposal = json.loads(response)
 
-            logger.info(f"Successfully proposed fix for {vuln_details.get('package_name', 'unknown')}")
+            logger.info(f"[{node_name}] Successfully proposed fix for {vuln_details.get('package_name', 'unknown')}")
 
+        except (LLMAuthenticationError, LLMConfigurationError, LLMConnectionError) as llm_critical_error:
+            critical_msg = f"LLM_PROVIDER_FAILURE: Critical error in {node_name} with provider '{active_provider}': {llm_critical_error}"
+            logger.critical(critical_msg)
+            # Get existing error message and check if it's a critical LLM failure
+            existing_error = state.get("error_message","")
+            return {
+                "current_cve_analysis_results": state.get('current_cve_analysis_results'),
+                "error_message": critical_msg if not (existing_error and existing_error.startswith("LLM_PROVIDER_FAILURE:")) else existing_error
+            }
+        except json.JSONDecodeError as json_e:
+            logger.error(f"Error parsing fix proposal response: {json_e}")
+            # Fallback to a basic fix proposal for JSON parsing errors
+            fix_suggestion = vuln_details.get('fix_suggestion_from_tool', 'Update to the latest version')
+            fix_proposal = {
+                "primary_fix_recommendation": fix_suggestion,
+                "alternative_mitigations": ["Restrict access to the affected component", 
+                                           "Monitor for suspicious activity"]
+            }
         except Exception as e:
-            logger.error(f"Error parsing LLM response: {e}")
-            # Fallback to a basic fix proposal
+            logger.error(f"Error in fix proposal: {e}")
+            # Fallback to a basic fix proposal for other errors
             fix_suggestion = vuln_details.get('fix_suggestion_from_tool', 'Update to the latest version')
             fix_proposal = {
                 "primary_fix_recommendation": fix_suggestion,
@@ -608,12 +797,21 @@ def propose_fix_node(state: ScaImpactState) -> Dict[str, Any]:
             "alternative_mitigations": fix_proposal.get('alternative_mitigations', ['No alternative mitigations available'])
         })
 
-        return {"current_cve_analysis_results": current_cve_analysis_results}
+        # Preserve any existing error message that might be critical
+        return {
+            "current_cve_analysis_results": current_cve_analysis_results,
+            "error_message": state.get("error_message")  # Preserve existing error message if any
+        }
 
     except Exception as e:
-        error_message = f"Error proposing fix: {e}"
-        logger.error(error_message)
-        return {"error_message": error_message}
+        error_msg_detail = f"Unexpected error in {node_name}: {e}"
+        logger.error(error_msg_detail, exc_info=True)
+        # Preserve critical error if it exists
+        current_overall_error = state.get("error_message")
+        if current_overall_error and current_overall_error.startswith("LLM_PROVIDER_FAILURE:"):
+            return {"current_cve_analysis_results": state.get('current_cve_analysis_results'), "error_message": current_overall_error}
+        else:
+            return {"current_cve_analysis_results": state.get('current_cve_analysis_results'), "error_message": error_msg_detail}
 
 
 def aggregate_cve_results_node(state: ScaImpactState) -> Dict[str, Any]:
@@ -752,10 +950,20 @@ def route_after_prepare_scan_environment(state: ScaImpactState) -> str:
     Returns:
         str: Next node name
     """
-    if state.get('error_message') or not state.get('cloned_repo_path'):
+    # If app_config itself is missing, that's a setup error.
+    if not state.get('app_config'):
+        logger.critical("App config missing in state during route_after_prepare_scan_environment. Critical setup error.")
+        state['error_message'] = "CRITICAL_SETUP_FAILURE: App configuration missing." # Set a critical error
+        return "cleanup_scan_environment_node" # Go straight to cleanup
+
+    error_message = state.get('error_message', '')
+    if error_message and (error_message.startswith("LLM_PROVIDER_FAILURE:") or \
+       error_message.startswith("CRITICAL_SETUP_FAILURE:")): # Check for critical errors
+        logger.warning(f"Critical failure detected early: {state['error_message']}. Proceeding to cleanup.")
         return "cleanup_scan_environment_node"
-    else:
-        return "identify_project_and_run_audit_node"
+    if not state.get('cloned_repo_path'): # General error in cloning
+        return "cleanup_scan_environment_node"
+    return "identify_project_and_run_audit_node"
 
 
 def route_after_identify_project(state: ScaImpactState) -> str:
@@ -768,6 +976,13 @@ def route_after_identify_project(state: ScaImpactState) -> str:
     Returns:
         str: Next node name
     """
+    # Check for critical failures first
+    error_message = state.get('error_message', '')
+    if error_message and (error_message.startswith("LLM_PROVIDER_FAILURE:") or \
+       error_message.startswith("CRITICAL_SETUP_FAILURE:")):
+        logger.warning(f"Critical failure detected in route_after_identify_project: {state['error_message']}. Skipping to final report.")
+        return "compile_final_report_node"
+
     vulnerabilities = state.get('audit_tool_vulnerabilities', [])
     if not vulnerabilities or state.get('error_message'):
         return "compile_final_report_node"
@@ -785,6 +1000,13 @@ def route_after_build_rag_index(state: ScaImpactState) -> str:
     Returns:
         str: Next node name
     """
+    # Check for critical failures first
+    error_message = state.get('error_message', '')
+    if error_message and (error_message.startswith("LLM_PROVIDER_FAILURE:") or \
+       error_message.startswith("CRITICAL_SETUP_FAILURE:")):
+        logger.warning(f"Critical failure detected in route_after_build_rag_index: {state['error_message']}. Skipping to final report.")
+        return "compile_final_report_node"
+
     if state.get('error_message') or not state.get('project_code_index_path'):
         return "compile_final_report_node"
     else:
@@ -801,10 +1023,17 @@ def route_after_select_next_vulnerability(state: ScaImpactState) -> str:
     Returns:
         str: Next node name
     """
+    # Check for critical LLM failure from a *previous* vulnerability's processing
+    error_message = state.get("error_message", "")
+    if error_message and error_message.startswith("LLM_PROVIDER_FAILURE:"):
+        logger.critical(f"LLM Provider failure detected: {state['error_message']}. Halting further vulnerability processing.")
+        return "compile_final_report_node" # Skip to report compilation
+
     if state.get('current_vulnerability_idx') == -1 or not state.get('current_vulnerability_details'):
+        logger.info("No more vulnerabilities to process or no current vulnerability selected.")
         return "compile_final_report_node"
     else:
-        return "analyze_cve_description_node"
+        return "analyze_cve_description_node" # Proceed to LLM analysis
 
 
 def route_after_vulnerability_processing(state: ScaImpactState) -> str:
@@ -817,11 +1046,20 @@ def route_after_vulnerability_processing(state: ScaImpactState) -> str:
     Returns:
         str: Next node name
     """
-    # Always return to select_next_vulnerability_node to process the next vulnerability
-    # If there's an error, log it but continue with the next vulnerability
-    if state.get('error_message'):
-        logger.warning(f"Error during vulnerability processing: {state.get('error_message')}. Moving to next vulnerability.")
+    # This route is hit after aggregate_cve_results_node for one vulnerability.
+    # If an LLM_PROVIDER_FAILURE was set by one of the preceding nodes for *this* vulnerability,
+    # it will be in state['error_message'].
+    error_message = state.get("error_message", "")
+    if error_message and error_message.startswith("LLM_PROVIDER_FAILURE:"):
+        logger.critical(f"LLM Provider failure detected during processing of current vulnerability: {state['error_message']}. Halting.")
+        return "compile_final_report_node" # Go to compile report, which then cleans up
 
+    # If there's a non-critical error, log it but continue with the next vulnerability
+    if state.get('error_message'):
+        logger.warning(f"Non-critical error during vulnerability processing: {state.get('error_message')}. Moving to next vulnerability.")
+
+    # Otherwise, always try to select the next vulnerability.
+    # If all are done, select_next_vulnerability_node will route to compile_final_report_node.
     return "select_next_vulnerability_node"
 
 
@@ -937,6 +1175,7 @@ def run_sca_scan(repo_source: str, app_config: Settings, recursion_limit: Option
 
         # Initialize the state
         initial_state: ScaImpactState = {
+            "app_config": app_config,  # Pass the potentially modified config
             "repo_source": repo_source,
             "cloned_repo_path": None,
             "project_type": None,
@@ -972,10 +1211,26 @@ def run_sca_scan(repo_source: str, app_config: Settings, recursion_limit: Option
             "audit_tool_vulnerabilities": final_state.get("audit_tool_vulnerabilities", [])
         }
 
-        logger.info(f"SCA scan completed for {repo_source}")
+        if error_message and error_message.startswith("LLM_PROVIDER_FAILURE:"):
+            logger.critical(f"Scan for {repo_source} terminated due to critical LLM failure: {error_message}")
+            # Raise an exception to immediately stop the scan process for API key errors
+            raise Exception(error_message)
+        elif error_message:
+            logger.error(f"Scan for {repo_source} completed or failed with errors: {error_message}")
+        else:
+            logger.info(f"SCA scan completed for {repo_source}")
+
         return scan_result
 
     except Exception as e:
+        error_message = str(e)
+
+        # Check if this is an LLM provider failure that we raised earlier
+        if error_message.startswith("LLM_PROVIDER_FAILURE:"):
+            # Re-raise the exception to be caught by the API router
+            raise
+
+        # For other exceptions, log and return a result with the error
         error_message_critical = f"Critical error during SCA scan execution: {e}"
         logger.error(error_message_critical, exc_info=True)  # Add exc_info for traceback
         return {

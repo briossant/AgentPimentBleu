@@ -226,6 +226,8 @@ AgentPimentBleu uses Google's Gemini API for LLM capabilities. You need to set u
    - Visit [Google AI Studio](https://ai.google.dev/) and sign up or log in
    - Create an API key from the API section
 
+> **Note**: If an invalid API key is provided, the agent will immediately stop processing and display an appropriate error message. This prevents wasting time on scans that would fail due to authentication issues.
+
 2. **Configure the API Key** (choose one method):
 
    a. **Using the UI input box**:

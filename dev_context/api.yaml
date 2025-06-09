@@ -1,0 +1,467 @@
+openapi: 3.0.3
+info:
+  title: AgentPimentBleu API
+  description: |
+    API for the AgentPimentBleu security scanner.
+    This API allows you to initiate asynchronous scans on Git repositories,
+    track their progress, and retrieve vulnerability analysis results incrementally or as a final report.
+  version: 0.2.0 # Incremented version due to significant changes
+  contact:
+    name: AgentPimentBleu Support
+    url: https://github.com/briossant/AgentPimentBleu/issues
+  license:
+    name: GNU General Public License v3.0
+    url: https://www.gnu.org/licenses/gpl-3.0.html
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+tags:
+  - name: General
+    description: API health and information.
+  - name: Scans
+    description: Endpoints for initiating, monitoring, and retrieving scan results.
+
+paths:
+  /:
+    get:
+      tags:
+        - General
+      summary: Root Endpoint
+      description: Provides a welcome message and links to the API documentation.
+      operationId: get_root_v2
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Welcome to AgentPimentBleu API
+                  docs_url:
+                    type: string
+                    example: /docs
+                  redoc_url:
+                    type: string
+                    example: /redoc
+  /health:
+    get:
+      tags:
+        - General
+      summary: Health Check
+      description: Returns the health status of the API.
+      operationId: get_health_v2
+      responses:
+        '200':
+          description: API is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /scans:
+    post:
+      tags:
+        - Scans
+      summary: Initiate a New Scan
+      description: |
+        Starts a new asynchronous security scan for the specified Git repository.
+        Returns a unique `scan_id` which can be used to track progress and retrieve results.
+        API keys and recursion limits can be provided to override default configurations for this scan.
+      operationId: initiate_scan
+      requestBody:
+        description: Parameters for the new scan.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanRequest'
+      responses:
+        '202':
+          description: Scan request accepted and initiated. The response includes the `scan_id`.
+          headers:
+            Location:
+              description: URL to check the scan progress.
+              schema:
+                type: string
+                format: url
+                example: /scans/a1b2c3d4-e5f6-7890-1234-567890abcdef/progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanInitiatedResponse'
+        '400':
+          description: Bad Request. The request payload is invalid (e.g., missing `repo_source`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorContext'
+        '500':
+          description: Internal Server Error. Failed to initiate the scan process.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorContext'
+
+  /scans/{scan_id}/progress:
+    get:
+      tags:
+        - Scans
+      summary: Get Scan Progress
+      description: Retrieves the current progress and status of an ongoing or completed scan.
+      operationId: get_scan_progress
+      parameters:
+        - name: scan_id
+          in: path
+          required: true
+          description: The unique identifier of the scan.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current progress of the scan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanProgressResponse'
+        '404':
+          description: Scan ID not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorContext'
+
+  /scans/{scan_id}/initial-audit:
+    get:
+      tags:
+        - Scans
+      summary: Get Initial Audit Results
+      description: |
+        Retrieves the raw vulnerability data as identified by the underlying audit tools (e.g., npm audit, pip-audit)
+        before LLM-based impact analysis. This is available after the initial auditing phase of the scan.
+      operationId: get_initial_audit_results
+      parameters:
+        - name: scan_id
+          in: path
+          required: true
+          description: The unique identifier of the scan.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of vulnerabilities found by the audit tool.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitialAuditResponse'
+        '404':
+          description: Scan ID not found or audit results not yet available.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorContext'
+
+  /scans/{scan_id}/processed-vulnerabilities:
+    get:
+      tags:
+        - Scans
+      summary: Get Processed Vulnerabilities
+      description: |
+        Retrieves the list of vulnerabilities that have been fully processed by the LLM,
+        including impact assessment and fix proposals. This list grows as the scan progresses.
+        If the scan was interrupted (e.g., by recursion limit), this shows all vulnerabilities processed up to that point.
+      operationId: get_processed_vulnerabilities
+      parameters:
+        - name: scan_id
+          in: path
+          required: true
+          description: The unique identifier of the scan.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of fully analyzed vulnerabilities.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scan_id:
+                    type: string
+                    format: uuid
+                  vulnerabilities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VulnerabilityDetail' # Reusing the existing detailed model
+        '404':
+          description: Scan ID not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorContext'
+
+  /scans/{scan_id}/report:
+    get:
+      tags:
+        - Scans
+      summary: Get Full Scan Report
+      description: |
+        Retrieves the complete scan report.
+        If the scan is still in progress, this might show the report compiled so far.
+        If the scan completed, failed with partial results, or hit a depth limit, this provides the comprehensive output.
+      operationId: get_scan_report
+      parameters:
+        - name: scan_id
+          in: path
+          required: true
+          description: The unique identifier of the scan.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The full scan report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanReportOutput' # Renamed from ScanOutput for clarity
+        '404':
+          description: Scan ID not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorContext'
+
+components:
+  schemas:
+    ScanRequest:
+      type: object
+      title: ScanRequest
+      description: Request model for initiating a scan.
+      required:
+        - repo_source
+      properties:
+        repo_source:
+          type: string
+          description: URL of the Git repository or an absolute/relative local path to the project directory.
+          example: "https://github.com/someuser/somerepo.git"
+        gemini_api_key:
+          type: string
+          nullable: true
+          description: Optional Gemini API key. Overrides configuration for this scan.
+          example: "AIzaSyYOURGEMINIAPIKEY..."
+        mistral_api_key:
+          type: string
+          nullable: true
+          description: Optional Mistral API key. Overrides configuration for this scan.
+          example: "YOURMISTRALAPIKEY..."
+        recursion_limit:
+          type: integer
+          format: int32
+          nullable: true
+          description: Optional recursion limit for the analysis graph.
+          example: 100
+
+    ScanInitiatedResponse:
+      type: object
+      title: ScanInitiatedResponse
+      description: Response after successfully initiating a scan.
+      properties:
+        scan_id:
+          type: string
+          format: uuid
+          description: The unique identifier for the initiated scan.
+        status:
+          type: string
+          description: Initial status of the scan.
+          example: "PENDING_PREPARATION"
+
+    ScanProgressResponse:
+      type: object
+      title: ScanProgressResponse
+      description: Provides the current progress of a scan.
+      properties:
+        scan_id:
+          type: string
+          format: uuid
+        overall_status:
+          type: string
+          enum:
+            - PENDING_PREPARATION
+            - PREPARING_ENVIRONMENT
+            - IDENTIFYING_PROJECT
+            - RUNNING_AUDIT
+            - BUILDING_RAG_INDEX
+            - PROCESSING_VULNERABILITIES
+            - COMPILING_REPORT
+            - CLEANING_UP
+            - COMPLETED
+            - FAILED
+            - ANALYSIS_DEPTH_LIMITED
+          description: High-level status of the scan.
+        current_step_description:
+          type: string
+          nullable: true
+          description: A human-readable description of the current processing step.
+          example: "Analyzing CVE-2023-12345 for package example-lib"
+        audit_vulnerabilities_found:
+          type: integer
+          description: Number of potential vulnerabilities identified by the initial audit tool.
+        llm_processed_vulnerabilities:
+          type: integer
+          description: Number of vulnerabilities fully processed by the LLM.
+        error_context:
+          $ref: '#/components/schemas/ErrorContext'
+          nullable: true
+
+    InitialAuditResponse:
+      type: object
+      title: InitialAuditResponse
+      description: Raw results from the dependency audit tool.
+      properties:
+        scan_id:
+          type: string
+          format: uuid
+        project_manifest_path:
+          type: string
+          nullable: true
+          description: Path to the detected dependency manifest file.
+        audit_tool_vulnerabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/RawVulnerabilityFromAudit'
+
+    RawVulnerabilityFromAudit:
+      type: object
+      title: RawVulnerabilityFromAudit
+      description: Represents a vulnerability as identified by an audit tool, before LLM processing.
+      properties:
+        package_name:
+          type: string
+        installed_version:
+          type: string
+          description: The version of the package installed in the project.
+        cve_ids:
+          type: array
+          items:
+            type: string
+        primary_advisory_id:
+          type: string
+          nullable: true
+          description: e.g., GHSA, OSV ID.
+        advisory_link:
+          type: string
+          format: url
+          nullable: true
+        advisory_title:
+          type: string
+          nullable: true
+        severity_from_tool:
+          type: string
+          nullable: true
+          description: Severity as reported by the audit tool.
+        fix_suggestion_from_tool:
+          type: string
+          nullable: true
+        advisory_vulnerable_range:
+          type: string
+          nullable: true
+          description: The range of versions declared vulnerable by the advisory.
+
+    VulnerabilityDetail:
+      # This schema remains largely the same as your original definition
+      type: object
+      title: VulnerabilityDetail
+      description: Detailed information about a single discovered and LLM-analyzed vulnerability.
+      required:
+        - cve_id
+        - cve_description
+        - package_name
+        - vulnerable_version_range
+        - analyzed_project_version
+        - impact_in_project_summary
+        - danger_rating
+        - proposed_fix_summary
+      properties:
+        cve_id: { type: string, example: "CVE-2023-12345" }
+        primary_advisory_id: { type: string, nullable: true, example: "GHSA-abcd-1234-wxyz" }
+        cve_link: { type: string, format: url, nullable: true, example: "https://nvd.nist.gov/vuln/detail/CVE-2023-12345" }
+        cve_description: { type: string, example: "A buffer overflow vulnerability..." }
+        package_name: { type: string, example: "example-library" }
+        vulnerable_version_range: { type: string, example: "<1.2.3" }
+        analyzed_project_version: { type: string, example: "1.2.0" }
+        impact_in_project_summary: { type: string, example: "The project's use of example-library..." }
+        evidence: { type: array, items: { type: string }, default: [], example: ["src/utils.py: line 42..."] }
+        danger_rating: { type: string, enum: ["Critical", "High", "Medium", "Low", "Informational", "Unknown"], example: "High" }
+        proposed_fix_summary: { type: string, example: "Update 'example-library' to version 1.2.3..." }
+        detailed_fix_guidance: { type: string, nullable: true, example: "To update, run 'npm install example-library@^1.2.3'..." }
+
+    SCAResultForReport: # Slightly modified from original SCAResult for the final report
+      type: object
+      title: SCAResultForReport
+      description: Software Composition Analysis results for the final report.
+      properties:
+        dependency_file_found: { type: string, nullable: true, example: "requirements.txt" }
+        vulnerabilities: # These are the fully processed ones
+          type: array
+          items: { $ref: '#/components/schemas/VulnerabilityDetail' }
+          default: []
+        issues_summary: { type: string, nullable: true, example: "Found 3 processed vulnerabilities: 1 Critical, 2 High." }
+
+    ScanReportOutput: # Replaces the original ScanOutput for the /report endpoint
+      type: object
+      title: ScanReportOutput
+      description: The final or current state of the scan report.
+      required:
+        - repo_source
+        - scan_id
+        - status
+      properties:
+        repo_source: { type: string, example: "https://github.com/someuser/somerepo.git" }
+        scan_id: { type: string, format: uuid, example: "a1b2c3d4-e5f6-7890-1234-567890abcdef" }
+        status: # This status is for the overall report generation/finality
+          type: string
+          enum: ["COMPLETED_SUCCESS", "COMPLETED_WITH_PARTIAL_RESULTS", "FAILED_SCAN", "IN_PROGRESS"]
+          example: "COMPLETED_SUCCESS"
+        sca_results:
+          $ref: '#/components/schemas/SCAResultForReport'
+          nullable: true
+        overall_summary: { type: string, nullable: true, example: "Scan completed successfully. Found 3 vulnerabilities." }
+        error_context: # If the overall scan failed or had issues.
+          $ref: '#/components/schemas/ErrorContext'
+          nullable: true
+
+    ErrorContext:
+      type: object
+      title: ErrorContext
+      description: Provides details about an error that occurred.
+      properties:
+        error_code:
+          type: string
+          enum:
+            - INTERNAL_SERVER_ERROR # Generic unhandled code failure
+            - INVALID_REQUEST_PAYLOAD # e.g., malformed JSON, missing required fields
+            - INVALID_LLM_API_KEY # API key for LLM provider is wrong or missing
+            - REPOSITORY_PREPARATION_FAILED # Cannot clone or access local repo path
+            - UNKNOWN_PROJECT_TYPE # Cannot determine project type (Python, JS, etc.)
+            - VULNERABILITY_AUDIT_TOOL_FAILED # e.g., npm audit or pip-audit command failed
+            - RAG_INDEXING_FAILED # Error during RAG index creation
+            - LLM_PROVIDER_COMMUNICATION_ERROR # LLM API call failed (network, rate limits, model not available)
+            - ANALYSIS_DEPTH_LIMIT_REACHED # Max graph recursion limit was hit
+            - SCAN_NOT_FOUND # The requested scan_id does not exist
+            - RESULTS_NOT_YET_AVAILABLE # For progressive endpoints if data isn't ready
+          description: A machine-readable error code.
+        error_message:
+          type: string
+          description: A human-readable description of the error.
+          example: "Failed to clone repository: Authentication required."
