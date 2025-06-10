@@ -7,6 +7,28 @@ This module contains functions for formatting scan results as Markdown.
 from typing import Dict, List
 from agentpimentbleu.app.ui_settings import COLORS, get_danger_rating_color
 
+def sort_vulnerabilities_by_severity(vulnerabilities: List[Dict]) -> List[Dict]:
+    """
+    Sort vulnerabilities by their severity/impact strength.
+    Critical vulnerabilities come first, followed by High, Medium, Low, and Informational.
+
+    Args:
+        vulnerabilities (List[Dict]): List of vulnerability dictionaries
+
+    Returns:
+        List[Dict]: Sorted list of vulnerabilities
+    """
+    severity_order = {
+        "Critical": 0,
+        "High": 1,
+        "Medium": 2,
+        "Low": 3,
+        "Informational": 4,
+        "Unknown": 5  # Default for any unknown severity
+    }
+
+    return sorted(vulnerabilities, key=lambda v: severity_order.get(v.get('danger_rating', 'Unknown'), 5))
+
 def format_summary_as_markdown(result: dict) -> str:
     """
     Format scan summary as Markdown with improved visual styling.
@@ -139,6 +161,8 @@ def format_summary_as_markdown(result: dict) -> str:
 
         # Add high-level vulnerability summary with styled metrics cards
         vulnerabilities = sca_results.get('vulnerabilities', [])
+        # Sort vulnerabilities by severity
+        vulnerabilities = sort_vulnerabilities_by_severity(vulnerabilities)
         if vulnerabilities:
             # Count vulnerabilities by danger rating
             ratings = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Informational": 0}
@@ -192,12 +216,18 @@ def format_summary_as_markdown(result: dict) -> str:
     return markdown
 
 
-def format_details_as_markdown(result: dict) -> str:
+def format_details_as_markdown(result: dict, filter_critical: bool = True, filter_high: bool = True, 
+                           filter_medium: bool = True, filter_low: bool = True, filter_info: bool = True) -> str:
     """
     Format detailed vulnerability information as Markdown with enhanced styling.
 
     Args:
         result (dict): Scan results
+        filter_critical (bool): Whether to include Critical vulnerabilities
+        filter_high (bool): Whether to include High vulnerabilities
+        filter_medium (bool): Whether to include Medium vulnerabilities
+        filter_low (bool): Whether to include Low vulnerabilities
+        filter_info (bool): Whether to include Informational vulnerabilities
 
     Returns:
         str: Formatted details as Markdown with improved visual elements
@@ -282,6 +312,20 @@ def format_details_as_markdown(result: dict) -> str:
     if sca_results:
         # Add vulnerabilities if available
         vulnerabilities = sca_results.get('vulnerabilities', [])
+
+        # Filter vulnerabilities based on filter parameters
+        filtered_vulnerabilities = []
+        for vuln in vulnerabilities:
+            danger_rating = vuln.get('danger_rating', 'Unknown')
+            if (danger_rating == 'Critical' and filter_critical) or \
+               (danger_rating == 'High' and filter_high) or \
+               (danger_rating == 'Medium' and filter_medium) or \
+               (danger_rating == 'Low' and filter_low) or \
+               ((danger_rating == 'Informational' or danger_rating == 'Unknown') and filter_info):
+                filtered_vulnerabilities.append(vuln)
+
+        # Sort vulnerabilities by severity
+        vulnerabilities = sort_vulnerabilities_by_severity(filtered_vulnerabilities)
         if vulnerabilities:
             # Add filtering controls
             markdown += f"""
@@ -515,6 +559,8 @@ def format_results_as_markdown(result: dict) -> str:
 
         # Add vulnerabilities if available
         vulnerabilities = sca_results.get('vulnerabilities', [])
+        # Sort vulnerabilities by severity
+        vulnerabilities = sort_vulnerabilities_by_severity(vulnerabilities)
         if vulnerabilities:
             markdown += f"### Vulnerabilities ({len(vulnerabilities)})\n\n"
 

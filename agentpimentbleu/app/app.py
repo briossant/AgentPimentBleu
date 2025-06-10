@@ -22,7 +22,41 @@ from agentpimentbleu.app.api_client import (
 )
 from agentpimentbleu.utils.plotting import create_vulnerability_chart
 
+# Global variable to store the current scan result for filtering
+current_scan_result = None
+
 logger = get_logger()
+
+
+def update_vulnerability_filters(filter_critical, filter_high, filter_medium, filter_low, filter_info):
+    """
+    Update the vulnerability details based on filter settings.
+
+    Args:
+        filter_critical (bool): Whether to show Critical vulnerabilities
+        filter_high (bool): Whether to show High vulnerabilities
+        filter_medium (bool): Whether to show Medium vulnerabilities
+        filter_low (bool): Whether to show Low vulnerabilities
+        filter_info (bool): Whether to show Informational vulnerabilities
+
+    Returns:
+        str: Updated HTML content for the details markdown
+    """
+    global current_scan_result
+    if current_scan_result is None:
+        return ""
+
+    # Apply filters to the vulnerability details
+    details_md = format_details_as_markdown(
+        current_scan_result, 
+        filter_critical, 
+        filter_high, 
+        filter_medium, 
+        filter_low, 
+        filter_info
+    )
+
+    return details_md
 
 
 def new_scan_repository_flow(
@@ -125,8 +159,13 @@ def new_scan_repository_flow(
 
     # Successfully got the report
     logger.info(f"UI: Scan report received for {scan_id}")
+
+    # Store the result in the global variable for filtering
+    global current_scan_result
+    current_scan_result = report_result
+
     summary_md = format_summary_as_markdown(report_result)
-    details_md = format_details_as_markdown(report_result)
+    details_md = format_details_as_markdown(report_result, True, True, True, True, True)  # Default: show all
 
     chart_image = None
     sca_results = report_result.get('sca_results', {})
@@ -238,7 +277,12 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
             vuln_chart, 
             summary_md, 
             details_md, 
-            results_json
+            results_json,
+            filter_critical,
+            filter_high,
+            filter_medium,
+            filter_low,
+            filter_info
         ) = create_scan_tab()
 
         # About tab
@@ -264,6 +308,37 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
         inputs=None,
         outputs=None,
         js="() => {document.querySelector('button[id^=\"tabitem\"][aria-controls=\"tabpanel\"][value=\"Scan\"]').click(); return []}"
+    )
+
+    # Connect filter checkboxes to update the vulnerability details
+    filter_critical.change(
+        fn=update_vulnerability_filters,
+        inputs=[filter_critical, filter_high, filter_medium, filter_low, filter_info],
+        outputs=details_md
+    )
+
+    filter_high.change(
+        fn=update_vulnerability_filters,
+        inputs=[filter_critical, filter_high, filter_medium, filter_low, filter_info],
+        outputs=details_md
+    )
+
+    filter_medium.change(
+        fn=update_vulnerability_filters,
+        inputs=[filter_critical, filter_high, filter_medium, filter_low, filter_info],
+        outputs=details_md
+    )
+
+    filter_low.change(
+        fn=update_vulnerability_filters,
+        inputs=[filter_critical, filter_high, filter_medium, filter_low, filter_info],
+        outputs=details_md
+    )
+
+    filter_info.change(
+        fn=update_vulnerability_filters,
+        inputs=[filter_critical, filter_high, filter_medium, filter_low, filter_info],
+        outputs=details_md
     )
 
 

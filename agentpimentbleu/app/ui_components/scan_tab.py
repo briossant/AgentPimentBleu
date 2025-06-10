@@ -14,7 +14,7 @@ def create_results_section():
     Create the results section UI components.
 
     Returns:
-        Tuple: Results container, vulnerability chart, summary markdown, details markdown, and results JSON
+        Tuple: Results container, vulnerability chart, summary markdown, details markdown, results JSON, and filter checkboxes
     """
     with gr.Row(visible=False) as results_container:
         with gr.Column():
@@ -27,12 +27,24 @@ def create_results_section():
                     summary_md = gr.HTML()
 
                 with gr.Tab("Vulnerability Details"):
+                    # Add filtering options
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            gr.Markdown("### Filter by Severity")
+                        with gr.Column(scale=3):
+                            with gr.Row():
+                                filter_critical = gr.Checkbox(label="Critical", value=True)
+                                filter_high = gr.Checkbox(label="High", value=True)
+                                filter_medium = gr.Checkbox(label="Medium", value=True)
+                                filter_low = gr.Checkbox(label="Low", value=True)
+                                filter_info = gr.Checkbox(label="Informational", value=True)
+
                     details_md = gr.HTML()
 
                 with gr.Tab("Raw JSON"):
                     results_json = gr.JSON()
 
-    return results_container, vuln_chart, summary_md, details_md, results_json
+    return results_container, vuln_chart, summary_md, details_md, results_json, filter_critical, filter_high, filter_medium, filter_low, filter_info
 
 def create_scan_tab():
     """
@@ -125,7 +137,7 @@ def create_scan_tab():
                         )
 
         # --- Bottom Section: Results (Spans full width under the columns) ---
-        results_container, vuln_chart, summary_md, details_md, results_json = create_results_section()
+        results_container, vuln_chart, summary_md, details_md, results_json, filter_critical, filter_high, filter_medium, filter_low, filter_info = create_results_section()
 
     return (
         scan_tab, 
@@ -139,5 +151,10 @@ def create_scan_tab():
         vuln_chart, 
         summary_md, 
         details_md, 
-        results_json
+        results_json,
+        filter_critical,
+        filter_high,
+        filter_medium,
+        filter_low,
+        filter_info
     )
