@@ -45,8 +45,7 @@ def create_scan_tab():
         with gr.Row():  # Main row to hold the two columns for inputs/settings
             # --- Left Column: Settings ---
             with gr.Column(scale=1): # Adjust scale as needed, e.g., scale=1 for smaller left, scale=2 for larger right
-                gr.Markdown("### Settings")
-                with gr.Accordion("LLM API Keys & Analysis Parameters", open=True):
+                with gr.Accordion("Settings", open=True):
                     with gr.Tabs():
                         with gr.TabItem("LLM API Keys"):
                             with gr.Column(): # Use column for vertical stacking inside the tab
@@ -90,15 +89,17 @@ def create_scan_tab():
                     """
                     <div class="card">
                         <h2>Scan a Repository</h2>
-                        <p>Enter a Git repository URL or a local path to scan for vulnerabilities.</p>
+                        <p>
+                            The supported languages are <strong>Python</strong> and <strong>JavaScript</strong>, see the about tab for more information.
+                        </p>
                     </div>
                     """
                 )
                 with gr.Row(): # Row for Repository Input and Examples
                     with gr.Column(scale=3): # Give more space to the repo input
                         repo_input = gr.Textbox(
-                            label="Repository URL or Local Path",
-                            placeholder="Enter repository URL or local path",
+                            label="Enter a public Git repository URL or use one of the provided examples",
+                            placeholder="https://github.com/user/repo",
                             lines=1
                         )
                     with gr.Column(scale=2): # Space for examples
