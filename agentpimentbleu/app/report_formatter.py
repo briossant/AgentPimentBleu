@@ -333,11 +333,11 @@ def format_details_as_markdown(result: dict, filter_critical: bool = True, filte
     <div style="display: flex; align-items: center; margin-bottom: 15px;">
         <h2 style="margin: 0; margin-right: 15px;">Vulnerabilities ({len(vulnerabilities)})</h2>
         <div style="display: flex; gap: 5px;">
-            <span class="badge badge-critical">Critical</span>
-            <span class="badge badge-high">High</span>
-            <span class="badge badge-medium">Medium</span>
-            <span class="badge badge-low">Low</span>
-            <span class="badge badge-info">Info</span>
+            <span class="badge badge-critical" onclick="document.getElementById('filter-critical').click()">Critical</span>
+            <span class="badge badge-high" onclick="document.getElementById('filter-high').click()">High</span>
+            <span class="badge badge-medium" onclick="document.getElementById('filter-medium').click()">Medium</span>
+            <span class="badge badge-low" onclick="document.getElementById('filter-low').click()">Low</span>
+            <span class="badge badge-info" onclick="document.getElementById('filter-info').click()">Info</span>
         </div>
     </div>
     <p>Click on a vulnerability to expand and see detailed information.</p>

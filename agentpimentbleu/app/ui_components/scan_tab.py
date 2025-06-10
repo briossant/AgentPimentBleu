@@ -33,11 +33,11 @@ def create_results_section():
                             gr.Markdown("### Filter by Severity")
                         with gr.Column(scale=3):
                             with gr.Row():
-                                filter_critical = gr.Checkbox(label="Critical", value=True)
-                                filter_high = gr.Checkbox(label="High", value=True)
-                                filter_medium = gr.Checkbox(label="Medium", value=True)
-                                filter_low = gr.Checkbox(label="Low", value=True)
-                                filter_info = gr.Checkbox(label="Informational", value=True)
+                                filter_critical = gr.Checkbox(label="Critical", value=True, elem_id="filter-critical")
+                                filter_high = gr.Checkbox(label="High", value=True, elem_id="filter-high")
+                                filter_medium = gr.Checkbox(label="Medium", value=True, elem_id="filter-medium")
+                                filter_low = gr.Checkbox(label="Low", value=True, elem_id="filter-low")
+                                filter_info = gr.Checkbox(label="Informational", value=True, elem_id="filter-info")
 
                     details_md = gr.HTML()
 
