@@ -8,7 +8,7 @@ sdk_version: 5.33.0
 app_file: main.py
 pinned: false
 license: gpl-3.0
-short_description: Security agent analyzing the true impact of vulnerable dependencies.
+short_description: Security agent analyzing impact of vulnerable dependencies
 tags: 
    - agent-demo-track
 ---
