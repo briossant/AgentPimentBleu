@@ -8,8 +8,9 @@ sdk_version: 5.33.0
 app_file: main.py
 pinned: false
 license: gpl-3.0
-short_description: Dependencies CVE analyser for true vulnerability impact.
-tags: [agent-demo-track]
+short_description: Security agent analyzing the true impact of vulnerable dependencies.
+tags: 
+   - agent-demo-track
 ---
 
 # AgentPimentBleu - Smart Security Scanner for Git Repositories

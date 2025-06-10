@@ -225,10 +225,7 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
 
     # Main content area with tabs
     with gr.Tabs() as tabs:
-        # About tab
-        about_tab = create_about_tab()
-
-        # Scan tab
+        # Scan tab (placed first to be the default tab)
         (
             scan_tab, 
             repo_input, 
@@ -243,6 +240,9 @@ with gr.Blocks(title="AgentPimentBleu - Smart Security Scanner", css=CUSTOM_CSS)
             details_md, 
             results_json
         ) = create_scan_tab()
+
+        # About tab
+        about_tab = create_about_tab()
 
     # Handle scan button click - now uses the generator
     scan_button.click(
