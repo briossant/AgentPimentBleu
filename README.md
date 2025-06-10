@@ -13,6 +13,8 @@ tags:
    - agent-demo-track
 ---
 
+🎥 [Watch the Project Presentation Video](https://www.youtube.com/watch?v=BpzL04Wfg0c)
+
 # AgentPimentBleu - Smart Security Scanner for Git Repositories
 
 **Hackathon:** Gradio Agents & MCP Hackathon 2025  
